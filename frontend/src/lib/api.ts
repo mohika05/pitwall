@@ -1,0 +1,196 @@
+import type {
+    TelemetrySnapshot,
+    TrackShape,
+} from "../types/telemetry"
+
+import type {
+    SessionListResponse,
+} from "../types/sessions"
+
+import type {
+    CatalogYears,
+    YearCatalogue,
+} from "../types/catalog"
+
+const API_BASE =
+    import.meta.env
+        .VITE_API_BASE_URL ??
+    "http://127.0.0.1:8000"
+
+
+async function request<T>(
+    path: string,
+    options?: RequestInit
+): Promise<T> {
+    const response = await fetch(
+        `${API_BASE}${path}`,
+        {
+        ...options,
+
+        headers: {
+            "Content-Type":
+            "application/json",
+
+            ...options?.headers,
+        },
+        }
+    )
+
+    if (!response.ok) {
+        const text =
+        await response.text()
+
+        throw new Error(
+        `API ${response.status}: ${text}`
+        )
+    }
+
+    return response.json()
+    }
+
+
+export interface ReplayStatus {
+    session_key: number
+
+    playing: boolean
+    speed: number
+
+    event_index: number
+    total_events: number
+
+    replay_timestamp: string
+    current_lap: number
+}
+
+
+export function getReplayStatus(
+    sessionKey: number
+    ) {
+    return request<ReplayStatus>(
+        `/replay/${sessionKey}/status`
+    )
+}
+
+
+export function playReplay(
+    sessionKey: number
+    ) {
+    return request<ReplayStatus>(
+        `/replay/${sessionKey}/play`,
+        {
+        method: "POST",
+        }
+    )
+}
+
+
+export function pauseReplay(
+    sessionKey: number
+    ) {
+    return request<ReplayStatus>(
+        `/replay/${sessionKey}/pause`,
+        {
+        method: "POST",
+        }
+    )
+}
+
+
+export function resetReplay(
+    sessionKey: number
+    ) {
+    return request<ReplayStatus>(
+        `/replay/${sessionKey}/reset`,
+        {
+        method: "POST",
+        }
+    )
+}
+
+
+export function setReplaySpeed(
+    sessionKey: number,
+    speed: number
+    ) {
+    return request<ReplayStatus>(
+        `/replay/${sessionKey}/speed`,
+        {
+        method: "POST",
+
+        body: JSON.stringify({
+            speed,
+        }),
+        }
+    )
+}
+
+
+export function seekReplayIndex(
+    sessionKey: number,
+    eventIndex: number
+    ) {
+    return request<ReplayStatus>(
+        `/replay/${sessionKey}/seek/index`,
+        {
+        method: "POST",
+
+        body: JSON.stringify({
+            event_index:
+            eventIndex,
+        }),
+        }
+    )
+}
+
+
+export function getTelemetrySnapshot(
+    sessionKey: number,
+    timestamp: string
+    ) {
+    const params =
+        new URLSearchParams({
+        timestamp,
+        })
+
+    return request<TelemetrySnapshot>(
+        `/telemetry/${sessionKey}/snapshot?${params}`
+    )
+}
+
+
+export function getTrackShape(
+    sessionKey: number
+    ) {
+    const params =
+        new URLSearchParams({
+        driver: "RUS",
+        max_points: "400",
+        })
+
+    return request<TrackShape>(
+        `/telemetry/${sessionKey}/track?${params}`
+    )
+}
+
+
+export function getSessions() {
+    return request<SessionListResponse>(
+    "/sessions"
+    )
+}
+
+
+export function getCatalogYears() {
+    return request<CatalogYears>(
+        "/catalog/years"
+    )
+}
+
+
+export function getYearCatalogue(
+    year: number
+    ) {
+    return request<YearCatalogue>(
+        `/catalog/${year}`
+    )
+}

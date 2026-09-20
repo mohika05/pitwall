@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pitwall-postgres
+
+    environment:
+      POSTGRES_DB: pitwall
+      POSTGRES_USER: pitwall
+      POSTGRES_PASSWORD: pitwall
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - pitwall_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pitwall -d pitwall"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pitwall-redis
+
+    ports:
+      - "6379:6379"
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+
+    volumes:
+      - pitwall_redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pitwall_postgres_data:
+  pitwall_redis_data:
