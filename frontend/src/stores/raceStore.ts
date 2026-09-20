@@ -15,6 +15,7 @@ import type {
 interface RaceStore {
     sessionKey: number | null
     revision: number
+    streamEpoch: number
 
     state: RaceState | null
 
@@ -57,7 +58,8 @@ interface RaceStore {
         telemetry:
         | TelemetrySnapshot
         | null,
-        revision: number
+        revision: number,
+        epoch?: number
     ) => void
     }
 
@@ -67,6 +69,7 @@ interface RaceStore {
         (set, get) => ({
         sessionKey: null,
         revision: 0,
+        streamEpoch: 0,
 
         state: null,
 
@@ -90,6 +93,7 @@ interface RaceStore {
             set({
             sessionKey,
             revision: 0,
+            streamEpoch: get().streamEpoch + 1,
 
             state: null,
 
@@ -111,8 +115,11 @@ interface RaceStore {
         setConnected: (
             connected
         ) => {
+            const current = get()
             set({
-            connected,
+                connected,
+                streamEpoch: connected && !current.connected ? current.streamEpoch + 1 : current.streamEpoch,
+                telemetry: connected && !current.connected ? null : current.telemetry,
             })
         },
 
@@ -171,7 +178,9 @@ interface RaceStore {
 
             set({
             revision: payload.revision,
-            telemetry: payload.revision !== current.revision ? null : current.telemetry,
+            telemetry: payload.revision !== current.revision
+                || (current.state && payload.state.replay_timestamp < current.state.replay_timestamp)
+                ? null : current.telemetry,
             state:
                 payload.state,
 
@@ -204,9 +213,11 @@ interface RaceStore {
 
         setTelemetry: (
             telemetry,
-            revision
+            revision,
+            epoch = get().streamEpoch
         ) => {
             const current = get()
+            if (epoch !== current.streamEpoch) return
             if (revision !== current.revision) return
             if (telemetry && telemetry.session_key !== current.sessionKey) return
             set({

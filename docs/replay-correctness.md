@@ -47,10 +47,14 @@ npm run build
 Frontend regression tests use Node's built-in runner and the existing TypeScript
 compiler, without an additional test dependency.
 
-## Remaining scope
+## Recovery and deployment
 
-Replay controllers are still shared per historical session within a backend
-process. Independent replay instances and durable recovery are the next phase.
-The cursor currently ends at the last normalized race event, not an independently
-stored session-end boundary. Full browser and database/Redis integration checks
-remain necessary in addition to the isolated regression tests.
+Replay controllers now use a tab-scoped viewer identity plus historical session key.
+PostgreSQL checkpoints restore the cursor paused after a restart, provided the
+context/event dataset fingerprint matches. Idle controllers without connected viewers
+are checkpointed and removed after two minutes. A browser connection epoch also
+rejects pending telemetry across reconnects even if a revision number repeats.
+
+The deployment is single-process. The cursor ends at the last normalized event,
+not an independently stored session-end boundary. See implementation-status.md for
+integration and browser checks and remaining modeling limitations.

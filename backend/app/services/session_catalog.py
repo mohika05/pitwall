@@ -1,3 +1,4 @@
+from app.services.provider_rate import request_slot
 import asyncio
 import json
 import time
@@ -475,6 +476,15 @@ class SessionCatalogService:
     # YEAR CATALOGUE
     # =========================================================
 
+    async def _with_readiness(self, catalogue: dict) -> dict:
+        local = await self._local_session_keys()
+        for meeting in catalogue["meetings"]:
+            for session in meeting["sessions"]:
+                key = session["session_key"]
+                session["ingested"] = key in local
+                session["telemetry_available"] = self._telemetry_available(key)
+        return catalogue
+
     async def year_catalogue(
         self,
         year: int,
@@ -502,7 +512,7 @@ class SessionCatalogService:
             if (
                 cached is not None
             ):
-                return cached
+                return await self._with_readiness(cached)
 
         # Prevent simultaneous duplicate builds.
         async with self._catalogue_lock:
@@ -519,7 +529,7 @@ class SessionCatalogService:
                 if (
                     cached is not None
                 ):
-                    return cached
+                    return await self._with_readiness(cached)
 
             # -------------------------------------------------
             # OPENF1

@@ -45,6 +45,7 @@ export function TelemetrySync() {
         let inFlight = false
 
         let lastRevision = -1
+        let lastEpoch = -1
 
         let lastTimestamp:
             | string
@@ -60,7 +61,7 @@ export function TelemetrySync() {
             }
 
 
-            const { state: race, revision } = useRaceStore.getState()
+            const { state: race, revision, streamEpoch } = useRaceStore.getState()
 
 
             if (!race) {
@@ -74,7 +75,7 @@ export function TelemetrySync() {
 
             if (
             timestamp ===
-            lastTimestamp && revision === lastRevision
+            lastTimestamp && revision === lastRevision && streamEpoch === lastEpoch
             ) {
             return
             }
@@ -91,11 +92,12 @@ export function TelemetrySync() {
                 )
 
 
-            if (stopped || useRaceStore.getState().revision !== revision) {
+            if (stopped || useRaceStore.getState().revision !== revision || useRaceStore.getState().streamEpoch !== streamEpoch) {
                 return
             }
 
 
+            lastEpoch = streamEpoch
             lastRevision = revision
             lastTimestamp =
                 timestamp
@@ -105,7 +107,8 @@ export function TelemetrySync() {
                 .getState()
                 .setTelemetry(
                 telemetry,
-                revision
+                revision,
+                streamEpoch
                 )
             } catch (error) {
             console.error(

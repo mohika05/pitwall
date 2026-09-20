@@ -41,6 +41,40 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pitwall:pitwall@postgres:5432/pitwall
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_ORIGIN: http://localhost:8080
+      OPENF1_ACCESS_TOKEN: ${OPENF1_ACCESS_TOKEN:-}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   pitwall_postgres_data:
   pitwall_redis_data:

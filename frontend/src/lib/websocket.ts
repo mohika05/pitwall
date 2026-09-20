@@ -1,3 +1,4 @@
+import { viewerId } from "./viewer"
 import {
     useRaceStore,
 } from "../stores/raceStore"
@@ -10,7 +11,7 @@ import type {
 const WS_BASE =
     import.meta.env
         ?.VITE_WS_BASE_URL ??
-    "ws://127.0.0.1:8000"
+    (typeof window === "undefined" ? "ws://127.0.0.1:8000" : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`)
 
 
 export class RaceWebSocket {
@@ -63,7 +64,7 @@ export class RaceWebSocket {
 
         const url =
         `${WS_BASE}/ws/replay/` +
-        `${this.sessionKey}`
+        `${this.sessionKey}?viewer_id=${viewerId()}`
 
 
         const socket = new WebSocket(url)

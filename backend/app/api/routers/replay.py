@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -21,10 +22,11 @@ router = APIRouter(
 
 async def _controller(
     session_key: int,
+    viewer_id: UUID | None = None,
 ):
     try:
         return await replay_registry.get(
-            session_key
+            session_key, str(viewer_id) if viewer_id else None
         )
 
     except ValueError as exc:
@@ -39,9 +41,10 @@ async def _controller(
 )
 async def replay_status(
     session_key: int,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     return controller.status()
@@ -52,9 +55,10 @@ async def replay_status(
 )
 async def replay_state(
     session_key: int,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     return {
@@ -73,9 +77,10 @@ async def replay_state(
 )
 async def replay_play(
     session_key: int,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     return await controller.play()
@@ -86,9 +91,10 @@ async def replay_play(
 )
 async def replay_pause(
     session_key: int,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     return await controller.pause()
@@ -99,9 +105,10 @@ async def replay_pause(
 )
 async def replay_reset(
     session_key: int,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     return await controller.reset()
@@ -113,9 +120,10 @@ async def replay_reset(
 async def replay_speed(
     session_key: int,
     request: ReplaySpeedRequest,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     try:
@@ -136,9 +144,10 @@ async def replay_speed(
 async def replay_seek_index(
     session_key: int,
     request: ReplaySeekIndexRequest,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     try:
@@ -159,9 +168,10 @@ async def replay_seek_index(
 async def replay_seek_time(
     session_key: int,
     request: ReplaySeekTimeRequest,
+    viewer_id: UUID | None = None,
 ):
     controller = await _controller(
-        session_key
+        session_key, viewer_id
     )
 
     return await controller.seek_time(

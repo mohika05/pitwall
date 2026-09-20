@@ -9,6 +9,9 @@ from app.domain.race_state import (
 class RaceStateCache:
     PREFIX = "pitwall:race"
 
+    def __init__(self, namespace: str | None = None):
+        self.namespace = namespace
+
     @classmethod
     def _key(
         cls,
@@ -25,9 +28,7 @@ class RaceStateCache:
         ttl_seconds: int = 3600,
     ) -> None:
         await redis_client.set(
-            self._key(
-                state.session_key
-            ),
+            f"{self.PREFIX}:{self.namespace}:state" if self.namespace else self._key(state.session_key),
             state.model_dump_json(),
             ex=ttl_seconds,
         )

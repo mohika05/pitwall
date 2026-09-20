@@ -84,3 +84,13 @@ test('obsolete socket callbacks are ignored, even after returning to the same se
     globalThis.WebSocket = previous
   }
 })
+
+test('reconnection rejects pending telemetry even if the revision number repeats', () => {
+  store().applyRealtimeState(payload())
+  const oldEpoch = store().streamEpoch
+  store().setConnected(true)
+  store().setTelemetry(telemetry(), 0, oldEpoch)
+  assert.equal(store().telemetry, null)
+  store().setTelemetry(telemetry(), 0, store().streamEpoch)
+  assert.ok(store().telemetry)
+})

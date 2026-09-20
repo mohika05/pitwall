@@ -1,3 +1,4 @@
+from app.services.provider_rate import request_slot
 import asyncio
 import logging
 import time
@@ -164,7 +165,7 @@ class OpenF1Provider(RaceDataProvider):
         for attempt in range(
             settings.openf1_max_retries
         ):
-            await self._throttle()
+            await request_slot()
 
             try:
                 response = await self.client.get(
@@ -493,6 +494,12 @@ class OpenF1Provider(RaceDataProvider):
     # ---------------------------------------------------------
     # FULL SESSION BUNDLE
     # ---------------------------------------------------------
+
+    async def get_session(self, session_key: int) -> dict[str, Any]:
+        rows = await self._get("sessions", {"session_key": session_key})
+        if not rows:
+            raise ValueError(f"Session {session_key} was not found")
+        return rows[0]
 
     async def fetch_bundle(
         self,

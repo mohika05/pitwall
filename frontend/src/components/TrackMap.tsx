@@ -1,3 +1,5 @@
+import type { RaceState } from "../types/race"
+import type { TelemetrySnapshot } from "../types/telemetry"
 import {
     useEffect,
     useMemo,
@@ -39,24 +41,29 @@ function normaliseColour(
 }
 
 
-export function TrackMap() {
-    const sessionKey =
+export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: { liveState?: RaceState; liveTelemetry?: TelemetrySnapshot; session?: number; referenceTrack?: TrackShape } = {}) {
+    const storedSessionKey =
         useRaceStore(
         (store) =>
             store.sessionKey
         )
 
-    const raceState =
+    const sessionKey = session ?? storedSessionKey
+
+    const storedRaceState =
         useRaceStore(
         (store) =>
             store.state
         )
 
-    const telemetry =
+    const storedTelemetry =
         useRaceStore(
         (store) =>
             store.telemetry
         )
+
+    const raceState = liveState ?? storedRaceState
+    const telemetry = liveTelemetry ?? storedTelemetry
 
     const selectedDriver =
         useRaceStore(
@@ -72,12 +79,14 @@ export function TrackMap() {
 
 
     const [
-        track,
+        storedTrack,
         setTrack,
     ] = useState<
         TrackShape | null
     >(null)
 
+
+    const track = referenceTrack ?? storedTrack
 
     const [
         error,
@@ -427,7 +436,7 @@ export function TrackMap() {
     // ERROR
     // -------------------------------------------------------
 
-    if (error) {
+    if (error && !referenceTrack) {
         return (
         <section className="panel track-panel">
 
@@ -571,6 +580,16 @@ export function TrackMap() {
                 return (
                     <g
                     key={driver}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Select ${driver}`}
+                    aria-pressed={selected}
+                    onKeyDown={event => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault()
+                            setSelectedDriver(driver)
+                        }
+                    }}
                     className={
                         selected
                         ? "driver-marker selected"

@@ -21,7 +21,7 @@ return (
     <span className="status-dot" />
 
     {connected
-        ? "LIVE LINK"
+        ? "CONNECTED"
         : "DISCONNECTED"}
     </div>
 )

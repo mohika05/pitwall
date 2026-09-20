@@ -1,26 +1,4 @@
-import {
-    ConnectionStatus,
-} from "./ConnectionStatus"
-
-
+import { ConnectionStatus } from './ConnectionStatus'
 export function Header() {
-    return (
-        <header className="header">
-
-        <div>
-            <div className="brand">
-            PITWALL
-            </div>
-
-            <div className="subtitle">
-            Race Strategy &
-            Replay Platform
-            </div>
-        </div>
-
-
-        <ConnectionStatus />
-
-        </header>
-    )
-    }
+  return <header className="header"><div className="brand-lockup"><span className="brand-mark" aria-hidden="true">╱╱</span><div><div className="brand">PITWALL<span> / </span></div><div className="subtitle">FORMULA 1 · RACE ENGINEERING</div></div></div><ConnectionStatus /></header>
+}

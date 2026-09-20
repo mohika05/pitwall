@@ -77,6 +77,7 @@ export function RaceBoard() {
         </div>
 
 
+        <div className="timing-columns"><span>POS</span><span>DRIVER</span><span>TYRE</span><span>AGE</span><span>GAP</span></div>
         <div className="driver-list">
             {drivers.map(
             (driver) => {
@@ -100,6 +101,7 @@ export function RaceBoard() {
                 return (
                 <button
                     type="button"
+                    aria-pressed={selected}
                     className={
                     selected
                         ? "driver-row selected-driver-row"
@@ -135,10 +137,9 @@ export function RaceBoard() {
                     </div>
 
 
-                    <div className="driver-tyre">
-                    {driver.compound ??
-                        "—"}
-                    </div>
+                    <div className="driver-tyre"><span className={`tyre-badge tyre-${driver.compound}`} title={driver.compound ?? "Unknown compound"}>
+                    {driver.compound === "INTERMEDIATE" ? "I" : driver.compound?.charAt(0) ?? "—"}
+                    </span></div>
 
 
                     <div className="driver-age">

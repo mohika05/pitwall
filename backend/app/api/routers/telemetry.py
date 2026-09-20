@@ -1,3 +1,4 @@
+from app.core.config import settings
 import asyncio
 from datetime import datetime
 
@@ -193,8 +194,8 @@ async def driver_telemetry_window(
 )
 async def telemetry_track(
     session_key: int,
-    driver: str = Query(
-        default="RUS",
+    driver: str | None = Query(
+        default=None,
         min_length=2,
         max_length=3,
     ),
@@ -204,6 +205,17 @@ async def telemetry_track(
         le=1000,
     ),
 ):
+    if driver is None:
+        candidates = sorted((settings.telemetry_dir / str(session_key)).glob("*_position.parquet"))
+        for candidate in candidates:
+            try:
+                return await telemetry_service.track_shape(
+                    session_key=session_key, driver=candidate.stem.removesuffix("_position"),
+                    max_points=max_points,
+                )
+            except (FileNotFoundError, ValueError):
+                continue
+        raise HTTPException(404, "No complete circuit lap is available; prepare telemetry first")
     try:
         return await telemetry_service.track_shape(
             session_key=(

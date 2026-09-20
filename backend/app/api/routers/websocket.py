@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import (
     APIRouter,
     WebSocket,
@@ -25,15 +26,16 @@ router = APIRouter(
 async def replay_websocket(
     websocket: WebSocket,
     session_key: int,
+    viewer_id: UUID | None = None,
 ) -> None:
     controller = (
         await replay_registry.get(
-            session_key
+            session_key, str(viewer_id) if viewer_id else None
         )
     )
 
     await connection_manager.connect(
-        session_key,
+        controller.channel,
         websocket,
     )
 
@@ -92,6 +94,6 @@ async def replay_websocket(
 
     finally:
         await connection_manager.disconnect(
-            session_key,
+            controller.channel,
             websocket,
         )

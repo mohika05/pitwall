@@ -14,7 +14,7 @@ logger = logging.getLogger(
 class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[
-            int,
+            str | int,
             set[WebSocket],
         ] = {}
 
@@ -22,7 +22,7 @@ class ConnectionManager:
 
     async def connect(
         self,
-        session_key: int,
+        session_key: str | int,
         websocket: WebSocket,
     ) -> None:
         await websocket.accept()
@@ -45,7 +45,7 @@ class ConnectionManager:
 
     async def disconnect(
         self,
-        session_key: int,
+        session_key: str | int,
         websocket: WebSocket,
     ) -> None:
         async with self._lock:
@@ -78,7 +78,7 @@ class ConnectionManager:
 
     async def broadcast(
         self,
-        session_key: int,
+        session_key: str | int,
         message: RealtimeMessage,
     ) -> None:
         async with self._lock:
@@ -116,7 +116,7 @@ class ConnectionManager:
 
     async def count(
         self,
-        session_key: int,
+        session_key: str | int,
     ) -> int:
         async with self._lock:
             return len(
