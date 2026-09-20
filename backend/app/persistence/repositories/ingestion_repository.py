@@ -325,6 +325,7 @@ class IngestionRepository:
                 ),
             }
             for row in bundle.stints
+            if row.get("lap_start") is not None
         ]
 
         await self._upsert_many(

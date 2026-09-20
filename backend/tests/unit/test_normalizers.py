@@ -4,6 +4,21 @@ from app.domain.enums import EventType
 from app.ingestion.normalizers.laps import (
     normalize_laps,
 )
+from app.ingestion.normalizers.stints import normalize_stints
+
+
+def test_stint_without_recorded_laps_does_not_block_session():
+    start = datetime(2025, 4, 20, 17, tzinfo=timezone.utc)
+    common = {"meeting_key": 1258, "session_key": 10022, "stint_number": 1,
+              "compound": "MEDIUM", "tyre_age_at_start": 0}
+    rows = [
+        {**common, "driver_number": 10, "lap_start": None, "lap_end": None},
+        {**common, "driver_number": 1, "lap_start": 1, "lap_end": 20},
+    ]
+    events = normalize_stints(rows, [], start)
+    assert len(events) == 1
+    assert events[0].driver_number == 1
+    assert events[0].lap_number == 1
 
 
 def test_lap_normalization() -> None:

@@ -562,7 +562,8 @@ class OpenF1Provider(RaceDataProvider):
             },
         )
 
-        intervals = await self._get(
+        # Practice/qualifying may not publish race-gap intervals.
+        intervals = await self._get_optional(
             "intervals",
             {
                 "session_key": session_key
@@ -576,7 +577,8 @@ class OpenF1Provider(RaceDataProvider):
             },
         )
 
-        pits = await self._get(
+        # Testing/practice sessions may not publish pit-stop records.
+        pits = await self._get_optional(
             "pit",
             {
                 "session_key": session_key

@@ -71,6 +71,18 @@ def event(
     )
 
 
+def test_safety_car_ends_on_track_clear_after_in_this_lap():
+    state = build_initial_state(context())
+    for message in ("SAFETY CAR DEPLOYED", "SAFETY CAR IN THIS LAP"):
+        apply_event(state, event(EventType.RACE_CONTROL, {"category": "SafetyCar", "message": message}))
+    apply_event(state, event(EventType.RACE_CONTROL, {"scope": "Sector", "flag": "CLEAR"}))
+    assert state.safety_car == SafetyCarState.FULL
+    apply_event(state, event(EventType.RACE_CONTROL, {"scope": "Track", "flag": "CLEAR", "message": "TRACK CLEAR"}))
+    assert state.safety_car == SafetyCarState.NONE
+    apply_event(state, event(EventType.RACE_CONTROL, {"scope": "Driver", "flag": "BLUE"}))
+    assert state.flag == "CLEAR"
+
+
 def test_state_transitions() -> None:
     state = build_initial_state(
         context()

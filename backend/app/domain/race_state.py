@@ -53,6 +53,7 @@ class RaceState(BaseModel):
     safety_car: SafetyCarState = (
         SafetyCarState.NONE
     )
+    safety_car_ending: bool = False
     latest_race_control_message: str | None = None
     weather: WeatherState = Field(
         default_factory=WeatherState
@@ -105,7 +106,8 @@ def _apply_race_control(
     state.latest_race_control_message = (
         message or state.latest_race_control_message
     )
-    if flag:
+    scope = str(event.payload.get("scope") or "").upper()
+    if flag and scope != "DRIVER":
         state.flag = str(flag)
     upper_message = message.upper()
     upper_category = category.upper()
@@ -114,12 +116,16 @@ def _apply_race_control(
         and "DEPLOY" in upper_message
     ):
         state.safety_car = SafetyCarState.VIRTUAL
+        state.safety_car_ending = False
     elif (
         "SAFETY CAR" in upper_message
         and "VIRTUAL" not in upper_message
         and "DEPLOY" in upper_message
     ):
         state.safety_car = SafetyCarState.FULL
+        state.safety_car_ending = False
+    elif "SAFETY CAR IN THIS LAP" in upper_message:
+        state.safety_car_ending = True
     elif (
         "VIRTUAL SAFETY CAR" in upper_message
         and (
@@ -134,8 +140,14 @@ def _apply_race_control(
     ):
         state.safety_car = SafetyCarState.NONE
 
-    if str(flag).upper() == "GREEN":
+    if (
+        str(flag).upper() == "GREEN" and scope in {"", "TRACK"}
+    ) or (
+        state.safety_car_ending and scope == "TRACK" and str(flag).upper() == "CLEAR"
+    ):
         state.safety_car = SafetyCarState.NONE
+    if state.safety_car == SafetyCarState.NONE:
+        state.safety_car_ending = False
 
 def apply_event(
     state: RaceState,

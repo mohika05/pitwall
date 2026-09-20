@@ -9,6 +9,7 @@ import {
 import {
     getTrackShape,
 } from "../lib/api"
+import { circuitTransform } from "../lib/trackGeometry"
 
 import {
     useRaceStore,
@@ -226,31 +227,25 @@ export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: 
     // TRACK COORDINATES
     // -------------------------------------------------------
 
-    const transformedTrack =
+    const geometry =
         useMemo(
         () => {
             if (!track) {
-            return []
+            return null
             }
-
-
-            return track.points.map(
-            (point) => ({
-                x:
-                point.x,
-
-                /*
-                * SVG Y grows downward,
-                * so flip FastF1 Y.
-                */
-                y:
-                -point.y,
-            })
-            )
+            return circuitTransform(track.points)
         },
         [
             track,
         ]
+        )
+
+    const transformedTrack =
+        useMemo(
+        () => geometry && track
+            ? track.points.map(geometry.apply)
+            : [],
+        [geometry, track]
         )
 
 
@@ -348,7 +343,7 @@ export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: 
     const driverPoints =
         useMemo(
         () => {
-            if (!telemetry) {
+            if (!telemetry || !geometry) {
             return []
             }
 
@@ -383,10 +378,7 @@ export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: 
                     driver:
                     driver.driver,
 
-                    point: {
-                    x,
-                    y: -y,
-                    },
+                    point: geometry.apply({ x, y }),
                 }
                 }
             )
@@ -405,6 +397,7 @@ export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: 
         },
         [
             telemetry,
+            geometry,
         ]
         )
 

@@ -44,6 +44,10 @@ def normalize_stints(
         driver_laps[driver_number].sort()
     events: list[RaceEvent] = []
     for row in rows:
+        # A retired driver's tyre record may have no recorded lap range.
+        # It cannot be placed on the replay timeline without inventing a lap.
+        if row.get("lap_start") is None:
+            continue
         driver_number = int(
             row["driver_number"]
         )
