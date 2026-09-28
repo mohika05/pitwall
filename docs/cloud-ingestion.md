@@ -55,6 +55,7 @@ S3_ENDPOINT_URL=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 S3_REGION=auto
 S3_ACCESS_KEY_ID=<R2 access key ID>
 S3_SECRET_ACCESS_KEY=<R2 secret access key>
+PITWALL_ADMIN_TOKEN=<random administrator token>
 
 FASTF1_CLEANUP_AFTER_PREPARE=true
 FASTF1_USE_REQUESTS_CACHE=false
@@ -158,8 +159,11 @@ S3_BUCKET
 S3_ENDPOINT_URL
 S3_ACCESS_KEY_ID
 S3_SECRET_ACCESS_KEY
+PITWALL_ADMIN_TOKEN
 ```
 
 The workflow uses an ephemeral Redis service, applies migrations, removes FastF1
 cache data after each session, and runs the cloud preflight when ingestion ends.
 Only one scheduled or manually dispatched ingestion run can execute at a time.
+The preparation API rejects requests without the matching `X-Pitwall-Admin` header;
+public visitors cannot start or inspect ingestion jobs.

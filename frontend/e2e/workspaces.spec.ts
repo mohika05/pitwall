@@ -43,7 +43,7 @@ test('all three workspaces load and remain within the viewport', async ({ page }
   expect(errors).toEqual([])
 })
 
-test('strategy submission renders a comparison and remote sessions can be prepared', async ({ page }) => {
+test('strategy submission renders a comparison and unavailable sessions stay disabled', async ({ page }) => {
   await page.route('**/api/replay/1/pause*', route => route.fulfill({ json: { replay_timestamp: '2025-10-05T12:05:00Z' } }))
   await page.route('**/api/strategy/simulate', route => route.fulfill({ json: {
     id: 'scenario-test', created_at: start, delta_seconds: -2.5, branch_lap: 3, model: 'deterministic-v1',
@@ -59,9 +59,9 @@ test('strategy submission renders a comparison and remote sessions can be prepar
   await page.getByRole('button', { name: 'Branch & simulate →' }).click()
   await expect(page.getByText('-2.50s', { exact: true })).toBeVisible()
   await page.locator('.race-browser summary').click()
-  const preparation = page.waitForRequest(r => r.url().includes('/preparation/2') && r.method() === 'POST')
-  await page.getByRole('button', { name: /Qualifying/ }).click()
-  expect((await preparation).postDataJSON()).toEqual({ telemetry: true })
+  const unavailable = page.getByRole('button', { name: /Qualifying/ })
+  await expect(unavailable).toBeDisabled()
+  await expect(unavailable).toContainText('Awaiting archive')
 })
 
 test('qualifying shows recorded stages and excludes race-only pit simulation', async ({ page }) => {

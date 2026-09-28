@@ -14,6 +14,8 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: PITWALL_ADMIN_TOKEN
+        sync: false
       - key: STORAGE_BACKEND
         value: s3
       - key: S3_BUCKET

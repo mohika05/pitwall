@@ -31,6 +31,7 @@ STORAGE_CACHE_MAX_BYTES=1073741824
 FASTF1_CLEANUP_AFTER_PREPARE=true
 FASTF1_USE_REQUESTS_CACHE=false
 PERSIST_HISTORICAL_EVENTS_IN_DATABASE=false
+PITWALL_ADMIN_TOKEN=<random administrator token>
 ```
 
 Objects are uploaded with a SHA-256 metadata value and verified with a `HEAD`

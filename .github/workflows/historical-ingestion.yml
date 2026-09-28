@@ -47,6 +47,7 @@ jobs:
       FASTF1_USE_REQUESTS_CACHE: "false"
       PERSIST_HISTORICAL_EVENTS_IN_DATABASE: "false"
       OPENF1_MIN_REQUEST_INTERVAL_SECONDS: "2.1"
+      PITWALL_ADMIN_TOKEN: ${{ secrets.PITWALL_ADMIN_TOKEN }}
       INGESTION_YEAR: ${{ inputs.year || '' }}
     steps:
       - uses: actions/checkout@v4
@@ -73,6 +74,7 @@ jobs:
             --years "$year" \
             --recent-days 30 \
             --completion-delay-minutes 120 \
+            --admin-token "$PITWALL_ADMIN_TOKEN" \
             --retry-attempts 2
       - name: Verify cloud state
         if: always()

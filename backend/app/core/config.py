@@ -23,6 +23,8 @@ class Settings(BaseSettings):
         "http://localhost:5173"
     )
 
+    pitwall_admin_token: str | None = None
+
     openf1_base_url: str = "https://api.openf1.org/v1"
     openf1_timeout_seconds: float = 60.0
     openf1_min_request_interval_seconds: float = 0.40
