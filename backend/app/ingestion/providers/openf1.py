@@ -551,7 +551,10 @@ class OpenF1Provider(RaceDataProvider):
             },
         )
 
-        positions = await self._get(
+        # Some historical sessions publish laps, stints and results without the
+        # position feed. Strategy analysis remains usable without position-change
+        # events, so do not block the whole archive on this optional resource.
+        positions = await self._get_optional(
             "position",
             {
                 "session_key": session_key
