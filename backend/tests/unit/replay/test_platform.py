@@ -108,8 +108,27 @@ def test_insufficient_data_and_illegal_pit_are_rejected():
 def test_model_falls_back_for_heldout_session_or_failed_validation():
     model = {"accepted": False}
     assert predictor(model, scenario()) is None
-    model.update(accepted=True, training_sessions=[2], holdout_session=1)
+    model.update(version=2, accepted=True, training_sessions=[2], holdout_session=1)
     assert predictor(model, scenario()) is None
+
+
+def test_legacy_model_cannot_be_presented_as_validated():
+    model = {
+        "version": 1,
+        "accepted": True,
+        "training_sessions": [2],
+        "holdout_session": 3,
+    }
+    request = scenario()
+    request.session_key = 4
+    assert predictor(model, request) is None
+
+
+def test_model_requires_meaningful_holdout_improvement():
+    from app.strategy.learning import eligible
+
+    assert not eligible(0.79, 0.80)
+    assert eligible(0.75, 0.80)
 
 
 async def test_controllers_have_independent_state_and_channels():
@@ -257,3 +276,59 @@ def test_backtest_follows_recorded_stop_and_reports_horizon_error():
     result = backtest(make_context(), sort_events(events))
     assert result["cases"][0]["pit_lap"] == 8
     assert result["mae_seconds"] >= 0
+    assert result["baseline_mae_seconds"] >= 0
+    assert isinstance(result["beats_baseline"], bool)
+
+
+def test_backtest_excludes_unsupported_neutralized_horizon():
+    from app.domain.events import sort_events
+    from app.strategy.validation import backtest
+
+    events = race_events()
+    events.append(
+        RaceEvent(
+            event_id="stint-2",
+            session_key=1,
+            meeting_key=2,
+            event_type=EventType.STINT_STARTED,
+            timestamp=START + timedelta(seconds=630),
+            driver_number=4,
+            lap_number=8,
+            payload={"compound": "HARD", "stint_number": 2, "lap_start": 8},
+        )
+    )
+    events.append(
+        RaceEvent(
+            event_id="safety-car",
+            session_key=1,
+            meeting_key=2,
+            event_type=EventType.RACE_CONTROL,
+            timestamp=START + timedelta(seconds=700),
+            payload={"message": "SAFETY CAR DEPLOYED", "category": "SafetyCar"},
+        )
+    )
+
+    with pytest.raises(ValueError, match="No supported dry"):
+        backtest(make_context(), sort_events(events))
+
+
+def test_backtest_rejects_mixed_weather_session():
+    from app.domain.events import sort_events
+    from app.strategy.validation import backtest
+
+    events = race_events()
+    events.append(
+        RaceEvent(
+            event_id="wet-stint",
+            session_key=1,
+            meeting_key=2,
+            event_type=EventType.STINT_STARTED,
+            timestamp=START + timedelta(seconds=500),
+            driver_number=4,
+            lap_number=6,
+            payload={"compound": "INTERMEDIATE", "stint_number": 2, "lap_start": 6},
+        )
+    )
+
+    with pytest.raises(ValueError, match="Mixed-weather"):
+        backtest(make_context(), sort_events(events))

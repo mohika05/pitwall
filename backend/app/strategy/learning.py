@@ -9,6 +9,13 @@ import numpy as np
 from app.persistence.repositories.workspace_repository import workspace_repository as records
 from app.services.analysis import session_analysis
 
+MINIMUM_IMPROVEMENT_FRACTION = 0.05
+MODEL_VERSION = 2
+
+
+def eligible(mae: float, baseline_mae: float) -> bool:
+    return mae <= baseline_mae * (1 - MINIMUM_IMPROVEMENT_FRACTION)
+
 
 def features(compound: str, age: float):
     return [
@@ -67,7 +74,7 @@ async def train(session_keys: list[int]):
     baseline_mae = float(np.mean(np.abs(test_y)))
     model = {
         "id": str(uuid4()),
-        "version": 1,
+        "version": MODEL_VERSION,
         "algorithm": "ridge-pace-delta-v1",
         "created_at": datetime.now(UTC).isoformat(),
         "coefficients": coefficients.tolist(),
@@ -78,7 +85,8 @@ async def train(session_keys: list[int]):
         "holdout_laps": len(test_y),
         "mae_seconds": mae,
         "baseline_mae_seconds": baseline_mae,
-        "accepted": mae < baseline_mae,
+        "accepted": eligible(mae, baseline_mae),
+        "minimum_improvement_fraction": MINIMUM_IMPROVEMENT_FRACTION,
         "age_range": [
             min(lap["tyre_age"] for rows, _, _ in datasets for lap in rows),
             max(lap["tyre_age"] for rows, _, _ in datasets for lap in rows),
@@ -91,7 +99,11 @@ async def train(session_keys: list[int]):
 
 
 def predictor(model, request):
-    if not model or not model["accepted"]:
+    if (
+        not model
+        or model.get("version", 0) < MODEL_VERSION
+        or not model.get("accepted", False)
+    ):
         return None
     if request.session_key in [*model["training_sessions"], model["holdout_session"]]:
         return None

@@ -21,13 +21,17 @@ Saved results include inputs, model identifier, branch fingerprint and trajector
 
 The ML module fits ridge regression to pace deltas with tyre-age and compound
 features, centers pace by driver/session and holds the latest session out entirely.
-Eligible models must beat the held-out constant-delta baseline. The simulator rejects
+Eligible version 2 models must beat the held-out constant-delta baseline by at least
+five percent. Older model records are not eligible. The simulator rejects
 models trained/validated on its target session and models using future data in a
 forecast. Outside the modeled compound/age range, it falls back to the tyre model.
 Fuel, track evolution and traffic still confound this model; validation MAE does not
 establish causal counterfactual accuracy.
 
-Limitations: wet/intermediate pace is not calibrated; tyre allocation and dry-compound
+Recorded-stop validation excludes mixed-weather races, neutralized horizons, abnormal
+lap durations and sessions with fewer than five supported cases. It compares model
+MAE with a constant-pace-plus-pit-loss baseline. Limitations: wet/intermediate pace is
+not calibrated; tyre allocation and dry-compound
 constraints are user supplied; race interruptions, penalties, overtaking and opponent
 responses are not fully simulated. Circuit-specific calibration and broader backtests
 are required before interpreting predicted gains as realistic strategy recommendations.

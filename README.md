@@ -99,8 +99,9 @@ compound constraint is optional and user-supplied; the application is not a full
 regulation engine. Sensitivity ranges are not statistical confidence intervals.
 
 ML training requires at least two prepared sessions and 30 clean dry laps per
-session. The latest session is held out. Only models beating a constant pace-delta
-baseline are eligible. Target training/holdout sessions and future training data
+session. The latest session is held out. Only version 2 models beating a constant
+pace-delta baseline by at least five percent are eligible. Target training/holdout
+sessions and future training data
 in forecast mode are excluded. Unsupported models/ages/compounds use the baseline.
 Training implements a ridge pace-delta model, not a validated causal tyre model.
 No pretrained model is shipped; actual accuracy must be assessed on your dataset.

@@ -27,6 +27,6 @@ export interface Scenario {
   warnings: string[]; comparison: string; uncertainty_note: string;
 }
 export interface PaceModel {
-  id: string; accepted: boolean; mae_seconds: number; baseline_mae_seconds: number;
+  id: string; version: number; accepted: boolean; mae_seconds: number; baseline_mae_seconds: number;
   training_sessions: number[]; holdout_session: number; training_laps: number; limits: string;
 }
