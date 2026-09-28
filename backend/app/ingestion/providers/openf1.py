@@ -1,4 +1,3 @@
-from app.services.provider_rate import request_slot
 import asyncio
 import logging
 import time
@@ -10,6 +9,7 @@ import httpx
 from app.core.config import settings
 from app.core.exceptions import ExternalDataError, ResourceNotFoundError
 from app.ingestion.providers.base import RaceDataProvider, SessionDataBundle
+from app.services.provider_rate import request_slot
 
 
 logger = logging.getLogger(__name__)
@@ -83,12 +83,6 @@ class OpenF1Provider(RaceDataProvider):
             "User-Agent": "pitwall/0.1",
         }
 
-        if settings.openf1_access_token:
-            headers["Authorization"] = (
-                f"Bearer "
-                f"{settings.openf1_access_token}"
-            )
-
         self.client = httpx.AsyncClient(
             base_url=base_url,
             timeout=httpx.Timeout(
@@ -161,7 +155,6 @@ class OpenF1Provider(RaceDataProvider):
         """
 
         last_error: Exception | None = None
-
         for attempt in range(
             settings.openf1_max_retries
         ):

@@ -49,7 +49,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://pitwall:pitwall@postgres:5432/pitwall
       REDIS_URL: redis://redis:6379/0
       FRONTEND_ORIGIN: http://localhost:8080
-      OPENF1_ACCESS_TOKEN: ${OPENF1_ACCESS_TOKEN:-}
     volumes:
       - ./data:/app/data
     ports:
@@ -73,6 +72,25 @@ services:
       - "127.0.0.1:8080:80"
     depends_on:
       backend:
+        condition: service_healthy
+
+  production:
+    profiles: ["deployment"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pitwall:pitwall@postgres:5432/pitwall
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_BACKEND: local
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8081:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:

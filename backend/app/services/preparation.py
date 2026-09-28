@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import pandas as pd
 
+from app.core.config import settings
 from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
 from app.ingestion.providers.openf1 import OpenF1Provider
 from app.ingestion.service import IngestionService
@@ -14,9 +15,24 @@ from app.persistence.repositories.event_repository import EventRepository
 from app.persistence.repositories.ingestion_repository import IngestionRepository
 from app.persistence.repositories.workspace_repository import workspace_repository as records
 from app.services.telemetry import _load_frame
+from app.storage.object_store import manifest_key, object_store
 
 logger = logging.getLogger(__name__)
 ACTIVE = {"queued", "preparing"}
+
+
+def drivers_with_fastf1_laps(loaded, requested: list[str]) -> tuple[list[str], list[str]]:
+    """Split requested drivers by whether FastF1 recorded at least one lap."""
+    if "Driver" not in loaded.laps.columns:
+        return requested, []
+    recorded = {
+        str(driver).upper()
+        for driver in loaded.laps["Driver"].dropna().unique()
+        if str(driver).strip()
+    }
+    available = [driver for driver in requested if driver.upper() in recorded]
+    unavailable = [driver for driver in requested if driver.upper() not in recorded]
+    return available, unavailable
 
 
 class PreparationService:
@@ -49,6 +65,9 @@ class PreparationService:
         await records.put("preparation", str(job["session_key"]), dict(job))
 
     async def run(self, job: dict):
+        fast = None
+        loaded = None
+        stored_files: list[dict] = []
         try:
             async with self.worker:
                 key = job["session_key"]
@@ -68,8 +87,9 @@ class PreparationService:
                     raise ValueError("No replayable events are available yet")
                 async with AsyncSessionLocal() as db, db.begin():
                     await IngestionRepository(db).persist_bundle(bundle)
-                    await EventRepository(db).upsert_many(events)
-                service.save_processed_events(key, events)
+                    if settings.persist_historical_events_in_database:
+                        await EventRepository(db).upsert_many(events)
+                stored_files = [await service.save_processed_events(key, events)]
                 job.update(events_ready=True, progress=40, message="Timing ready")
                 await self.save(job)
                 if job["telemetry_requested"]:
@@ -107,15 +127,30 @@ class PreparationService:
                                         f"{int(row['DriverNumber'])}:{int(row['LapNumber'])}"
                                     ] = f"Q{index}"
                     await records.put("session_enrichment", str(key), enrichment)
-                    drivers = [
+                    requested_drivers = [
                         driver.name_acronym for driver in context.drivers if driver.name_acronym
                     ]
+                    drivers, unavailable_drivers = drivers_with_fastf1_laps(
+                        loaded, requested_drivers
+                    )
+                    job["telemetry_unavailable_drivers"] = unavailable_drivers
+                    if unavailable_drivers:
+                        logger.info(
+                            "Skipping drivers without recorded FastF1 laps for session %s: %s",
+                            key,
+                            ", ".join(unavailable_drivers),
+                        )
+                    if not drivers:
+                        raise ValueError("FastF1 returned no laps for any session driver")
                     succeeded = 0
+                    telemetry_drivers: list[str] = []
                     for index, driver in enumerate(drivers):
                         try:
                             extracted = await fast.extract_driver(loaded, driver)
-                            await fast.export_driver(key, extracted)
+                            _, objects = await fast.export_driver(key, extracted)
+                            stored_files.extend(objects)
                             succeeded += 1
+                            telemetry_drivers.append(driver)
                         except Exception as exc:
                             logger.exception("Telemetry preparation failed for %s", driver)
                             job["errors"].append(f"{driver}: {type(exc).__name__}")
@@ -127,6 +162,17 @@ class PreparationService:
                     _load_frame.cache_clear()
                     job["telemetry_ready"] = bool(drivers) and succeeded == len(drivers)
                     job["telemetry_drivers_ready"] = succeeded
+                    manifest = {
+                        "version": 1,
+                        "session_key": key,
+                        "created_at": datetime.now(UTC).isoformat(),
+                        "complete": job["telemetry_ready"],
+                        "drivers": telemetry_drivers,
+                        "files": stored_files,
+                        "total_bytes": sum(item["bytes"] for item in stored_files),
+                    }
+                    await object_store.write_json(manifest_key(key), manifest)
+                    job["stored_bytes"] = manifest["total_bytes"]
                 job.update(
                     state="ready" if not job["errors"] else "partial",
                     progress=100,
@@ -145,6 +191,18 @@ class PreparationService:
                 errors=[*job["errors"], type(exc).__name__],
             )
         finally:
+            if settings.fastf1_cleanup_after_prepare and fast is not None and loaded is not None:
+                try:
+                    job["fastf1_cache_bytes_removed"] = await asyncio.shield(
+                        fast.cleanup_session_cache(loaded)
+                    )
+                except Exception as exc:
+                    logger.exception("FastF1 cache cleanup failed")
+                    job["errors"].append(f"cache cleanup: {type(exc).__name__}")
+            if job.get("state") == "ready" and settings.storage_backend == "s3":
+                for stored in stored_files:
+                    await object_store.evict_local(stored["key"])
+                await object_store.evict_local(manifest_key(job["session_key"]))
             await self.save(job)
 
     async def recover(self):

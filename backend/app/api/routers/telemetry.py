@@ -1,4 +1,3 @@
-from app.core.config import settings
 import asyncio
 from datetime import datetime
 
@@ -206,11 +205,11 @@ async def telemetry_track(
     ),
 ):
     if driver is None:
-        candidates = sorted((settings.telemetry_dir / str(session_key)).glob("*_position.parquet"))
+        candidates = await telemetry_service.available_drivers(session_key)
         for candidate in candidates:
             try:
                 return await telemetry_service.track_shape(
-                    session_key=session_key, driver=candidate.stem.removesuffix("_position"),
+                    session_key=session_key, driver=candidate,
                     max_points=max_points,
                 )
             except (FileNotFoundError, ValueError):

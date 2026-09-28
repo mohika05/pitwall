@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: pitwall
+    runtime: docker
+    plan: free
+    region: singapore
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_PREFIX
+        value: pitwall
+      - key: STORAGE_CACHE_MAX_BYTES
+        value: "1073741824"
+      - key: FASTF1_CLEANUP_AFTER_PREPARE
+        value: "true"
+      - key: FASTF1_USE_REQUESTS_CACHE
+        value: "false"
+      - key: PERSIST_HISTORICAL_EVENTS_IN_DATABASE
+        value: "false"

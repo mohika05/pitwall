@@ -1,6 +1,7 @@
 import {
     useRaceStore,
 } from "../stores/raceStore"
+import { F1Term } from './F1Glossary'
 
 
 export function RaceStatus() {
@@ -60,7 +61,7 @@ export function RaceStatus() {
 
         <div>
             <span className="label">
-            FLAG
+            <F1Term term="Flag">FLAG</F1Term>
             </span>
 
             <strong>
@@ -71,7 +72,7 @@ export function RaceStatus() {
 
         <div>
             <span className="label">
-            SAFETY CAR
+            <F1Term term="Safety car">SAFETY CAR</F1Term>
             </span>
 
             <strong>

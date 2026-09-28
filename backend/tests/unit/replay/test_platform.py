@@ -2,6 +2,7 @@ from copy import deepcopy
 from datetime import UTC, timedelta
 from unittest.mock import AsyncMock
 
+import pandas as pd
 import pytest
 from test_engine import START, make_context, make_events
 
@@ -11,7 +12,6 @@ from app.replay.controller import ReplayController
 from app.replay.engine import ReplayEngine, state_fingerprint
 from app.schemas.strategy import StrategyRequest
 from app.services.analysis import analyse
-from app.services.live import merge_rows
 from app.strategy.learning import predictor
 from app.strategy.simulator import simulate
 
@@ -105,13 +105,6 @@ def test_insufficient_data_and_illegal_pit_are_rejected():
         simulate(make_context(), race_events(), request)
 
 
-def test_live_merge_updates_corrected_lap_without_duplicates():
-    old = [{"driver_number": 4, "lap_number": 1, "lap_duration": None}]
-    new = [{"driver_number": 4, "lap_number": 1, "lap_duration": 90}]
-    assert merge_rows(old, new, "laps") == new
-    assert merge_rows(new, new, "laps") == new
-
-
 def test_model_falls_back_for_heldout_session_or_failed_validation():
     model = {"accepted": False}
     assert predictor(model, scenario()) is None
@@ -193,6 +186,18 @@ def test_sensitivity_runs_alternative_assumptions():
     request.uncertainty = 0
     exact = simulate(make_context(), race_events(), request)
     assert exact["sensitivity"]["optimistic"] == exact["sensitivity"]["pessimistic"]
+
+
+def test_preparation_skips_drivers_without_recorded_fastf1_laps():
+    from types import SimpleNamespace
+
+    from app.services.preparation import drivers_with_fastf1_laps
+
+    loaded = SimpleNamespace(laps=pd.DataFrame({"Driver": ["VER", "NOR", "VER"]}))
+    available, unavailable = drivers_with_fastf1_laps(loaded, ["VER", "SAI", "NOR"])
+
+    assert available == ["VER", "NOR"]
+    assert unavailable == ["SAI"]
 
 
 async def test_preparation_deduplicates_running_jobs_and_recovers_interruption(monkeypatch):

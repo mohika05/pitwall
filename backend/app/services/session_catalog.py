@@ -1,4 +1,3 @@
-from app.services.provider_rate import request_slot
 import asyncio
 import json
 import time
@@ -12,6 +11,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.exceptions import ExternalDataError
 from app.persistence.database import AsyncSessionLocal
+from app.persistence.repositories.workspace_repository import workspace_repository
 
 
 class SessionCatalogService:
@@ -447,10 +447,7 @@ class SessionCatalogService:
                 in result.fetchall()
             }
 
-    def _telemetry_available(
-        self,
-        session_key: int,
-    ) -> bool:
+    def _legacy_telemetry_available(self, session_key: int) -> bool:
         directory = (
             settings.telemetry_dir
             / str(
@@ -472,17 +469,37 @@ class SessionCatalogService:
             )
         )
 
+    async def _telemetry_session_keys(self) -> set[int]:
+        jobs = await workspace_repository.list("preparation", 1000)
+        ready = {
+            int(job["session_key"])
+            for job in jobs
+            if (
+                job.get("telemetry_ready")
+                or int(job.get("telemetry_drivers_ready") or 0) > 0
+            )
+            and job.get("session_key") is not None
+        }
+        if settings.telemetry_dir.is_dir():
+            for directory in settings.telemetry_dir.iterdir():
+                if directory.is_dir() and directory.name.isdigit():
+                    key = int(directory.name)
+                    if self._legacy_telemetry_available(key):
+                        ready.add(key)
+        return ready
+
     # =========================================================
     # YEAR CATALOGUE
     # =========================================================
 
     async def _with_readiness(self, catalogue: dict) -> dict:
         local = await self._local_session_keys()
+        telemetry = await self._telemetry_session_keys()
         for meeting in catalogue["meetings"]:
             for session in meeting["sessions"]:
                 key = session["session_key"]
                 session["ingested"] = key in local
-                session["telemetry_available"] = self._telemetry_available(key)
+                session["telemetry_available"] = key in telemetry
         return catalogue
 
     async def year_catalogue(
@@ -562,6 +579,7 @@ class SessionCatalogService:
                 await self
                 ._local_session_keys()
             )
+            telemetry_session_keys = await self._telemetry_session_keys()
 
             # -------------------------------------------------
             # GROUP SESSIONS BY MEETING
@@ -649,11 +667,7 @@ class SessionCatalogService:
                                 in local_session_keys
                             ),
 
-                        "telemetry_available":
-                            self
-                            ._telemetry_available(
-                                session_key
-                            ),
+                        "telemetry_available": session_key in telemetry_session_keys,
                     }
                 )
 

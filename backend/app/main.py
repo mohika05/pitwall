@@ -6,13 +6,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routers import (
     analysis,
     catalog,
     health,
-    live,
     preparation,
     replay,
     sessions,
@@ -25,7 +26,6 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.persistence.database import engine
 from app.replay.controller import replay_registry
-from app.services.live import live_service
 from app.services.preparation import preparation_service
 
 configure_logging()
@@ -49,7 +49,6 @@ async def lifespan(_: FastAPI):
     finally:
         maintenance.cancel()
         await asyncio.gather(maintenance, return_exceptions=True)
-        await live_service.close()
         await preparation_service.close()
         await replay_registry.close()
         await close_redis()
@@ -64,12 +63,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.middleware("http")
 async def observe(request: Request, call_next):
     started = time.monotonic()
     response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if request.url.path.startswith("/assets/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
     route = getattr(request.scope.get("route"), "path", "unmatched")
     key = (request.method, route, response.status_code)
     duration = time.monotonic() - started
@@ -104,6 +109,24 @@ for module in (
     preparation,
     analysis,
     strategy,
-    live,
 ):
     app.include_router(module.router)
+
+# The production image serves the compiled frontend from the same origin. Keep
+# the root API routes for local clients while exposing REST under the frontend's
+# existing /api base path. WebSockets remain at /ws.
+for module in (
+    health,
+    replay,
+    telemetry,
+    sessions,
+    catalog,
+    preparation,
+    analysis,
+    strategy,
+):
+    app.include_router(module.router, prefix="/api", include_in_schema=False)
+
+frontend_directory = settings.frontend_dist_dir
+if frontend_directory.is_dir():
+    app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="frontend")

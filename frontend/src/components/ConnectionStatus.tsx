@@ -4,6 +4,12 @@ import {
 
 
 export function ConnectionStatus() {
+    const sessionKey =
+        useRaceStore(
+        (state) =>
+            state.sessionKey
+        )
+
     const connected =
         useRaceStore(
         (state) =>
@@ -15,14 +21,18 @@ return (
     className={
         connected
         ? "connection connected"
-        : "connection disconnected"
+        : sessionKey === null
+            ? "connection idle"
+            : "connection disconnected"
     }
     >
     <span className="status-dot" />
 
-    {connected
-        ? "CONNECTED"
-        : "DISCONNECTED"}
+    {sessionKey === null
+        ? "SELECT SESSION"
+        : connected
+            ? "REPLAY LINKED"
+            : "RECONNECTING"}
     </div>
 )
 }

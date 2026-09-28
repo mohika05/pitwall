@@ -1,3 +1,7 @@
+import asyncio
+import gzip
+import json
+
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +14,7 @@ from app.domain.events import (
 from app.persistence.models.race_event import (
     RaceEventRecord,
 )
+from app.storage.object_store import object_store, processed_events_key
 
 
 class EventRepository:
@@ -108,6 +113,19 @@ class EventRepository:
         )
 
         rows = result.scalars().all()
+
+        if not rows:
+            try:
+                path = await object_store.materialize(processed_events_key(session_key))
+            except FileNotFoundError:
+                return []
+
+            def load_export() -> list[RaceEvent]:
+                with gzip.open(path, "rt", encoding="utf-8") as source:
+                    payload = json.load(source)
+                return [RaceEvent.model_validate(item) for item in payload]
+
+            return sort_events(await asyncio.to_thread(load_export))
 
         events = [
             RaceEvent(

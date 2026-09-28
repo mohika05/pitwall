@@ -10,7 +10,7 @@ import { TrackMap } from '../components/TrackMap'
 import { RaceBrowser } from '../components/RaceBrowser'
 import { AnalysisWorkspace } from '../components/AnalysisWorkspace'
 import { StrategyWorkspace } from '../components/StrategyWorkspace'
-import { LiveWorkspace } from '../components/LiveWorkspace'
+import { F1Glossary } from '../components/F1Glossary'
 import { RaceWebSocket } from '../lib/websocket'
 import { request } from '../lib/api'
 import { useResource } from '../hooks/useResource'
@@ -43,14 +43,15 @@ export default function App() {
     }
   }, [connected, sessionKey])
   return <main className="app-shell"><Header /><RaceBrowser />
-    <nav className="workspace-nav" aria-label="Workspaces">{['Replay', 'Analyze', 'Strategy', 'Live'].map((name, index) => <button key={name} className={view === name ? 'active' : ''} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><small>0{index + 1}</small>{name}</button>)}<span className="nav-caption">THE RACE. EVERY DETAIL.</span></nav>
+    <nav className="workspace-nav" aria-label="Workspaces">{['Replay', 'Analyze', 'Strategy'].map((name, index) => <button key={name} className={view === name ? 'active' : ''} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><small>0{index + 1}</small>{name}</button>)}<span className="nav-caption">THE RACE. EVERY DETAIL.</span></nav>
     {bookmarkError && <p role="alert" className="control-error">{bookmarkError}</p>}
     {sessionKey !== null && <TelemetrySync />}
-    {view === 'Live' ? <LiveWorkspace sessionKey={sessionKey} /> : sessionKey === null ? <section className="panel welcome-panel"><span className="eyebrow">YOUR ENGINEERING STATION</span><h1>Every lap tells a story.</h1><p>Choose a Grand Prix and prepare a session to explore timing, telemetry and alternative strategies.</p></section> : <>
-      <div className="session-data-actions"><span>REPLAY · {analysis.data ? `${analysis.data.session.year} ${analysis.data.session.country_name} · ${analysis.data.session.session_name}` : `Session ${sessionKey}`}</span><button className="text-button" onClick={analysis.refresh}>Refresh session analysis</button></div>
-      <RaceStatus /><ReplayControls key={sessionKey} analysis={analysis.data} />
-      {view === 'Replay' ? <><div className="dashboard-grid"><RaceBoard /><TrackMap key={sessionKey} /></div><DriverTelemetry /><RaceInfo /></> : analysis.data ? view === 'Analyze' ? <AnalysisWorkspace key={sessionKey} analysis={analysis.data} /> : <StrategyWorkspace key={sessionKey} analysis={analysis.data} /> : <section className="panel empty-state">{analysis.error ?? 'Loading session analysis…'}{analysis.error && <button onClick={analysis.refresh}>Retry</button>}</section>}
+    {sessionKey === null ? <section className="panel welcome-panel"><span className="eyebrow">YOUR ENGINEERING STATION</span><h1>Every lap tells a story.</h1><p>Choose a Grand Prix and prepare a session to explore timing, telemetry and alternative strategies.</p></section> : <>
+      <div className="session-data-actions"><span>{view.toUpperCase()} · {analysis.data ? `${analysis.data.session.year} ${analysis.data.session.country_name} · ${analysis.data.session.session_name}` : `Session ${sessionKey}`}</span><button className="text-button" onClick={analysis.refresh}>Refresh session analysis</button></div>
+      <RaceStatus /><ReplayControls key={`replay-${sessionKey}`} analysis={analysis.data} />
+      {view === 'Replay' ? <><div className="dashboard-grid"><RaceBoard /><TrackMap key={`track-${sessionKey}`} /></div><DriverTelemetry /><RaceInfo /></> : analysis.data ? view === 'Analyze' ? <AnalysisWorkspace key={`analysis-${sessionKey}`} analysis={analysis.data} /> : <StrategyWorkspace key={`strategy-${sessionKey}`} analysis={analysis.data} /> : <section className="panel empty-state">{analysis.error ?? 'Loading session analysis…'}{analysis.error && <button onClick={analysis.refresh}>Retry</button>}</section>}
     </>}
+    <F1Glossary />
     <footer className="app-footer"><span>PITWALL / INDEPENDENT RACE ANALYSIS</span><span>Timing · OpenF1 &nbsp; Telemetry · FastF1</span></footer>
   </main>
 }

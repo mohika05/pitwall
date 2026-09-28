@@ -8,12 +8,9 @@ _last = 0.0
 
 
 async def request_slot():
-    """Shared budget across catalogue, historical preparation and live polling."""
+    """Shared anonymous-request budget across catalogue and preparation."""
     global _last
     async with _lock:
-        minimum = max(
-            settings.openf1_min_request_interval_seconds,
-            1.1 if settings.openf1_access_token else 2.1,
-        )
+        minimum = max(settings.openf1_min_request_interval_seconds, 2.1)
         await asyncio.sleep(max(0, minimum - (time.monotonic() - _last)))
         _last = time.monotonic()

@@ -1,8 +1,13 @@
 .venv/
 .env
+.DS_Store
+.neon
+.neon/
+.wrangler/
 
 __pycache__/
 *.py[cod]
+backend/*.egg-info/
 
 .pytest_cache/
 .ruff_cache/
@@ -10,15 +15,22 @@ __pycache__/
 data/raw/*
 data/processed/*
 data/snapshots/*
+data/catalog/*
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/snapshots/.gitkeep
+!data/catalog/.gitkeep
 !data/fastf1_cache/.gitkeep
 !data/telemetry/.gitkeep
 
 data/fastf1_cache/*
 data/telemetry/*
+data/manifests/*
+data/object_cache/*
+
+!data/manifests/.gitkeep
+!data/object_cache/.gitkeep
 
 
 frontend/node_modules/

@@ -1,6 +1,7 @@
 import {
     useRaceStore,
 } from "../stores/raceStore"
+import { F1Term } from './F1Glossary'
 
 
 function displayNumber(
@@ -48,7 +49,7 @@ export function RaceInfo() {
 
         <section className="panel race-control-panel">
             <div className="panel-title">
-            Race Control
+            <F1Term term="Race control">Race Control</F1Term>
             </div>
 
             <div className="race-control-content">

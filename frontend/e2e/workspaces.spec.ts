@@ -18,14 +18,13 @@ test.beforeEach(async ({ page }) => {
     else if (path === '/analysis/1') body = analysis
     else if (path.endsWith('/track')) body = { session_key: 1, lap_number: 1, points: [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1500, y: 1000 }, { x: 0, y: 1500 }] }
     else if (path.endsWith('/window')) body = { car: [{ Date: start, Speed: 100, Throttle: 60 }, { Date: '2025-10-05T12:01:00Z', Speed: 300, Throttle: 100 }] }
-    else if (path.startsWith('/live/')) body = { status: 'stopped', state: null }
     return route.fulfill({ json: body })
   })
   await page.routeWebSocket('**/ws/replay/**', socket => {
     socket.send(JSON.stringify({ type: 'race_state', session_key: 1, payload: { revision: 0, event_index: 10, total_events: 100, playing: false, speed: 1, state: { session_key: 1, meeting_key: 2, current_lap: 3, replay_timestamp: start, drivers: { 4: { driver_number: 4, name_acronym: 'NOR', position: 1, compound: 'MEDIUM', tyre_age: 3, current_lap: 3, team_colour: 'FF8700' } } } } }))
   })
 })
-test('all workspaces load and remain within the viewport', async ({ page }) => {
+test('all three workspaces load and remain within the viewport', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', e => errors.push(e.message))
   await page.goto('/')
@@ -41,11 +40,7 @@ test('all workspaces load and remain within the viewport', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Change the call.' })).toBeVisible()
   await page.screenshot({ path: `test-results/strategy-${test.info().project.name}.png`, fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.getByRole('button', { name: /Live/, exact: false }).click()
-  await expect(page.getByRole('heading', { name: 'The session, as it unfolds.' })).toBeVisible()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   expect(errors).toEqual([])
-  await page.screenshot({ path: `test-results/live-${test.info().project.name}.png`, fullPage: true })
 })
 
 test('strategy submission renders a comparison and remote sessions can be prepared', async ({ page }) => {

@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.core.config import settings
+from app.storage.object_store import manifest_key, object_store, telemetry_key
 
 
 def _clean_scalar(
@@ -224,39 +224,38 @@ class TelemetryService:
         "LapNumber",
     )
 
-    def _path(
-        self,
-        session_key: int,
-        driver: str,
-        kind: str,
-    ) -> Path:
-        return (
-            settings.telemetry_dir
-            / str(
-                session_key
-            )
-            / (
-                f"{driver.upper()}"
-                f"_{kind}.parquet"
-            )
-        )
-
     async def _frame(
         self,
         session_key: int,
         driver: str,
         kind: str,
     ) -> pd.DataFrame:
-        path = self._path(
-            session_key,
-            driver,
-            kind,
+        path = await object_store.materialize(
+            telemetry_key(session_key, driver, kind)
         )
 
         return await asyncio.to_thread(
             _load_frame,
             str(path),
         )
+
+    async def available_drivers(self, session_key: int) -> list[str]:
+        try:
+            manifest = await object_store.read_json(manifest_key(session_key))
+        except FileNotFoundError:
+            directory = object_store.local_path(f"telemetry/{session_key}")
+            if not directory.is_dir():
+                return []
+            cars = {path.stem.removesuffix("_car") for path in directory.glob("*_car.parquet")}
+            positions = {
+                path.stem.removesuffix("_position")
+                for path in directory.glob("*_position.parquet")
+            }
+            return sorted(cars & positions)
+        # A partial manifest can still contain verified telemetry for most of
+        # the field. Expose those drivers while retaining ``complete`` in the
+        # manifest for ingestion diagnostics and targeted retries.
+        return [str(driver) for driver in manifest.get("drivers", [])]
 
     @staticmethod
     def _row_to_dict(

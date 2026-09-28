@@ -21,7 +21,8 @@ dependencies = [
     "fastf1==3.8.3",
     "pyarrow>=18,<22",
     "numpy>=1.26,<3",
-    "redis>=5,<9"
+    "redis>=5,<9",
+    "boto3>=1.35,<2",
 ]
 
 [project.optional-dependencies]

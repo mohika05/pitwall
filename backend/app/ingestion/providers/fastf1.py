@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ import pandas as pd
 
 from app.core.config import settings
 from app.core.exceptions import ExternalDataError
-
+from app.storage.object_store import object_store, telemetry_key
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +86,9 @@ class FastF1TelemetryProvider:
             exist_ok=True,
         )
 
-        settings.telemetry_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
         fastf1.Cache.enable_cache(
-            str(
-                settings.fastf1_cache_dir
-            )
+            str(settings.fastf1_cache_dir),
+            use_requests_cache=settings.fastf1_use_requests_cache,
         )
 
     # ---------------------------------------------------------
@@ -101,11 +96,22 @@ class FastF1TelemetryProvider:
     # ---------------------------------------------------------
 
     @staticmethod
+    def _session_name(year: int, session_type: str) -> str:
+        # Formula 1 renamed Sprint Shootout to Sprint Qualifying in 2024.
+        # OpenF1 uses the newer label for historical sessions as well, while
+        # FastF1 retains the name used during each season.
+        if year <= 2023 and session_type.casefold() == "sprint qualifying":
+            return "Sprint Shootout"
+        return session_type
+
+    @staticmethod
     def _load_session_sync(
         year: int,
         event: str,
         session_type: str,
     ) -> Any:
+        session_type = FastF1TelemetryProvider._session_name(year, session_type)
+
         logger.info(
             "Loading FastF1 session: %s %s %s",
             year,
@@ -436,10 +442,7 @@ class FastF1TelemetryProvider:
     def _driver_directory(
         session_key: int,
     ) -> Path:
-        directory = (
-            settings.telemetry_dir
-            / str(session_key)
-        )
+        directory = object_store.local_path(f"telemetry/{session_key}")
 
         directory.mkdir(
             parents=True,
@@ -508,9 +511,37 @@ class FastF1TelemetryProvider:
         self,
         session_key: int,
         telemetry: DriverTelemetry,
-    ) -> TelemetryExport:
-        return await asyncio.to_thread(
+    ) -> tuple[TelemetryExport, list[dict[str, Any]]]:
+        exported = await asyncio.to_thread(
             self._export_driver_sync,
             session_key,
             telemetry,
         )
+        car = await object_store.publish(
+            exported.car_path,
+            telemetry_key(session_key, telemetry.driver, "car"),
+        )
+        position = await object_store.publish(
+            exported.position_path,
+            telemetry_key(session_key, telemetry.driver, "position"),
+        )
+        return exported, [car, position]
+
+    @staticmethod
+    async def cleanup_session_cache(session: Any) -> int:
+        """Delete only the decoded FastF1 cache for one verified session."""
+        api_path = getattr(session, "api_path", "")
+        relative = api_path.strip("/")
+        if relative.startswith("static/"):
+            relative = relative.removeprefix("static/")
+        target = (settings.fastf1_cache_dir / relative).resolve()
+        root = settings.fastf1_cache_dir.resolve()
+        if root not in target.parents or not target.is_dir():
+            return 0
+        size = sum(path.stat().st_size for path in target.rglob("*") if path.is_file())
+        await asyncio.to_thread(shutil.rmtree, target)
+        parent = target.parent
+        while parent != root and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+        return size

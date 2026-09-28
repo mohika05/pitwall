@@ -10,7 +10,3 @@ before the cursor are applied, then state is broadcast. Snapshots are deep copie
 Commands which move the cursor increment a revision so telemetry from an older
 revision cannot overwrite the new view. Official classification remains separate
 from reconstructed running order.
-
-Live mode retains a source-row map, rereads an overlapping time window and rebuilds
-state. The overlap catches recent late events and corrections; it does not imply
-arbitrary historical correction detection. Restarting the feed performs a full fetch.

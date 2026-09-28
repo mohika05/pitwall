@@ -32,6 +32,8 @@ export function RaceBrowser() {
   const selectedMeeting = meetings.find(m => m.meeting_key === meeting)
     ?? meetings.find(m => m.sessions.some(s => s.session_key === sessionKey)) ?? meetings[0]
   const selected = meetings.flatMap(m => m.sessions).find(s => s.session_key === sessionKey)
+  const seasonSessions = meetings.flatMap(m => m.sessions).filter(s => !s.is_cancelled)
+  const readySessions = seasonSessions.filter(s => s.telemetry_available).length
   async function choose(session: CatalogSession) {
     const job = jobs.data?.find(j => j.session_key === session.session_key)
     if (session.ingested || job?.events_ready) { setSession(session.session_key); return }
@@ -45,7 +47,10 @@ export function RaceBrowser() {
   return <section className="race-browser">
     <div className="race-browser-header">
       <div><span className="eyebrow">SESSION DIRECTORY</span><h2>{selectedMeeting?.meeting_name ?? 'Choose your Grand Prix'}</h2></div>
-      <label className="season-control">Season <select aria-label="Season" value={year ?? ''} onChange={e => { setYear(Number(e.target.value)); setMeeting(null) }}>{years.map(y => <option key={y}>{y}</option>)}</select></label>
+      <div className="race-browser-meta">
+        {!catalogue.loading && seasonSessions.length > 0 && <span>{readySessions} of {seasonSessions.length} sessions ready</span>}
+        <label className="season-control">Season <select aria-label="Season" value={year ?? ''} onChange={e => { setYear(Number(e.target.value)); setMeeting(null) }}>{years.map(y => <option key={y}>{y}</option>)}</select></label>
+      </div>
     </div>
     <details open={!sessionKey}>
       <summary>{selected?.session_name ?? 'Browse races and sessions'} <span className="muted">· Change session</span></summary>
@@ -53,9 +58,10 @@ export function RaceBrowser() {
       <div className="catalogue-tabs">{selectedMeeting?.sessions.map(s => {
         const job = jobs.data?.find(j => j.session_key === s.session_key)
         const ready = s.ingested || job?.events_ready
+        const fullData = s.telemetry_available || job?.telemetry_ready
         const preparing = pending === s.session_key || job?.state === 'queued' || job?.state === 'preparing'
         return <button key={s.session_key} disabled={preparing || s.is_cancelled} className={s.session_key === sessionKey ? 'active' : ''} onClick={() => void choose(s)}>
-          <span className={`catalogue-status ${ready ? 'catalogue-status--ready' : ''}`} /> {s.session_name} <small>{preparing ? `${job?.progress ?? 0}%` : ready ? 'Ready' : s.is_cancelled ? 'Cancelled' : '↓ Prepare'}</small>
+          <span className={`catalogue-status ${ready ? 'catalogue-status--ready' : ''}`} /> {s.session_name} <small>{preparing ? `${job?.progress ?? 0}%` : fullData ? 'Full data' : ready ? 'Timing ready' : s.is_cancelled ? 'Cancelled' : '↓ Prepare'}</small>
         </button>
       })}</div>
       {catalogue.loading && <p className="muted">Loading calendar…</p>}
@@ -63,7 +69,7 @@ export function RaceBrowser() {
       {sessionKey && <button className="text-button" onClick={() => void request(`/preparation/${sessionKey}`, { method: 'POST', body: '{"telemetry":true}' }).then(jobs.refresh).catch(e => setError(String(e)))}>Prepare / retry telemetry for active session</button>}
     </details>
     {(error || catalogue.error) && <p role="alert" className="control-error">{error ?? catalogue.error}</p>}
-    {jobs.data?.filter(j => ['queued', 'preparing', 'failed', 'partial', 'interrupted'].includes(j.state)).map(job => <div className="job" key={job.session_key}>
+    {jobs.data?.filter(j => seasonSessions.some(session => session.session_key === j.session_key) && ['queued', 'preparing', 'failed', 'partial', 'interrupted'].includes(j.state)).map(job => <div className="job" key={job.session_key}>
       <span>Session {job.session_key} · {job.message}</span><progress value={job.progress} max={100} />
       {job.events_ready && <button onClick={() => setSession(job.session_key)}>Open timing</button>}
       {!['queued', 'preparing'].includes(job.state) && <button onClick={() => void request(`/preparation/${job.session_key}`, { method: 'POST', body: '{"telemetry":true}' }).then(jobs.refresh).catch(e => setError(String(e)))}>Retry</button>}

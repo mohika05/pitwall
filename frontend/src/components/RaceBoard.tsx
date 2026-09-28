@@ -1,6 +1,7 @@
 import {
     useRaceStore,
 } from "../stores/raceStore"
+import { F1Term } from './F1Glossary'
 
 
 function normaliseColour(
@@ -77,7 +78,7 @@ export function RaceBoard() {
         </div>
 
 
-        <div className="timing-columns"><span>POS</span><span>DRIVER</span><span>TYRE</span><span>AGE</span><span>GAP</span></div>
+        <div className="timing-columns"><span>POS</span><span>DRIVER</span><span><F1Term term="Tyre compound">TYRE</F1Term></span><span><F1Term term="Tyre age">AGE</F1Term></span><span><F1Term term="Gap">GAP</F1Term></span></div>
         <div className="driver-list">
             {drivers.map(
             (driver) => {

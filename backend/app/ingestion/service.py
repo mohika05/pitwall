@@ -1,3 +1,4 @@
+import gzip
 import re
 from pathlib import Path
 
@@ -35,6 +36,8 @@ from app.ingestion.providers.base import (
     RaceDataProvider,
     SessionDataBundle,
 )
+from app.storage.object_store import object_store, processed_events_key
+
 
 def _slug(value: str) -> str:
     return re.sub(
@@ -166,16 +169,13 @@ class IngestionService:
             sort_events(events),
         )
 
-    def save_processed_events(
+    async def save_processed_events(
         self,
         session_key: int,
         events: list[RaceEvent],
-    ) -> Path:
-        path = (
-            settings.data_dir
-            / "processed"
-            / f"{session_key}_events.json"
-        )
+    ) -> dict:
+        key = processed_events_key(session_key)
+        path = object_store.local_path(key)
 
         path.parent.mkdir(
             parents=True,
@@ -187,6 +187,7 @@ class IngestionService:
             for event in events
         ) + "]"
 
-        path.write_text(payload)
+        with gzip.open(path, "wt", encoding="utf-8", compresslevel=6) as destination:
+            destination.write(payload)
 
-        return path
+        return await object_store.publish(path, key)

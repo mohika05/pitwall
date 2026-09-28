@@ -1,16 +1,16 @@
 from datetime import timedelta
 from statistics import median
 
-from app.core.config import settings
 from app.domain.enums import EventType, SafetyCarState
 from app.domain.race_state import apply_event, build_initial_state
 from app.persistence.database import AsyncSessionLocal
 from app.persistence.repositories.event_repository import EventRepository
 from app.persistence.repositories.session_repository import SessionRepository
 from app.persistence.repositories.workspace_repository import workspace_repository
+from app.services.telemetry import telemetry_service
 
 
-def analyse(context, events, enrichment=None):
+def analyse(context, events, enrichment=None, telemetry_drivers=None):
     enrichment = enrichment or {}
     state = build_initial_state(context)
     laps, stints, timeline = [], [], []
@@ -76,14 +76,7 @@ def analyse(context, events, enrichment=None):
                 "median_pace": median(clean) if clean else None,
             }
         )
-    directory = settings.telemetry_dir / str(context.session.session_key)
-    ready = [
-        d.name_acronym
-        for d in context.drivers
-        if d.name_acronym
-        and (directory / f"{d.name_acronym}_car.parquet").exists()
-        and (directory / f"{d.name_acronym}_position.parquet").exists()
-    ]
+    ready = telemetry_drivers or []
     return {
         "session": context.session.model_dump(mode="json"),
         "drivers": summaries,
@@ -116,6 +109,7 @@ async def load_history(session_key: int):
 async def session_analysis(session_key: int):
     context, events, official = await load_history(session_key)
     enrichment = await workspace_repository.get("session_enrichment", str(session_key))
-    result = analyse(context, events, enrichment)
+    telemetry_drivers = await telemetry_service.available_drivers(session_key)
+    result = analyse(context, events, enrichment, telemetry_drivers)
     result["official_result"] = official
     return result

@@ -1,5 +1,3 @@
-import type { RaceState } from "../types/race"
-import type { TelemetrySnapshot } from "../types/telemetry"
 import {
     useEffect,
     useMemo,
@@ -42,29 +40,24 @@ function normaliseColour(
 }
 
 
-export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: { liveState?: RaceState; liveTelemetry?: TelemetrySnapshot; session?: number; referenceTrack?: TrackShape } = {}) {
-    const storedSessionKey =
+export function TrackMap() {
+    const sessionKey =
         useRaceStore(
         (store) =>
             store.sessionKey
         )
 
-    const sessionKey = session ?? storedSessionKey
-
-    const storedRaceState =
+    const raceState =
         useRaceStore(
         (store) =>
             store.state
         )
 
-    const storedTelemetry =
+    const telemetry =
         useRaceStore(
         (store) =>
             store.telemetry
         )
-
-    const raceState = liveState ?? storedRaceState
-    const telemetry = liveTelemetry ?? storedTelemetry
 
     const selectedDriver =
         useRaceStore(
@@ -87,7 +80,7 @@ export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: 
     >(null)
 
 
-    const track = referenceTrack ?? storedTrack
+    const track = storedTrack
 
     const [
         error,
@@ -429,7 +422,7 @@ export function TrackMap({ liveState, liveTelemetry, session, referenceTrack }: 
     // ERROR
     // -------------------------------------------------------
 
-    if (error && !referenceTrack) {
+    if (error) {
         return (
         <section className="panel track-panel">
 

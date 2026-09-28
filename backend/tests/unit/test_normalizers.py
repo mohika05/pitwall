@@ -1,10 +1,22 @@
 from datetime import datetime, timezone
 
 from app.domain.enums import EventType
+from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
 from app.ingestion.normalizers.laps import (
     normalize_laps,
 )
 from app.ingestion.normalizers.stints import normalize_stints
+
+
+def test_2023_sprint_qualifying_uses_fastf1_historical_name() -> None:
+    assert (
+        FastF1TelemetryProvider._session_name(2023, "Sprint Qualifying")
+        == "Sprint Shootout"
+    )
+    assert (
+        FastF1TelemetryProvider._session_name(2024, "Sprint Qualifying")
+        == "Sprint Qualifying"
+    )
 
 
 def test_stint_without_recorded_laps_does_not_block_session():

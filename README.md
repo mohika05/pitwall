@@ -1,6 +1,6 @@
 # Pitwall
 
-Formula 1 historical replay, session analysis, strategy experiments and live timing.
+Formula 1 strategy experiments, historical replay and session analysis.
 React/TypeScript + FastAPI, PostgreSQL, Redis and FastF1 Parquet telemetry.
 
 ## Run locally
@@ -43,19 +43,44 @@ workers until the job/replay ownership layer is moved to shared coordination.
 
 ## Workspaces
 
-- **Replay:** choose a real weekend/session, prepare it on demand, control playback,
-  seek by time/lap, select drivers, inspect the circuit, tyres, weather and telemetry.
-- **Analyze:** compare lap times and telemetry, review stints, practice long-run pace,
-  recorded qualifying stages, race-control events and separate official results.
 - **Strategy:** branch at a replay moment, replace the next pit decision, compare
   recorded history or a decision-time baseline, save scenarios and inspect sensitivity.
-- **Live:** start/stop a session feed using its OpenF1 session ID. Requires a valid
-  `OPENF1_ACCESS_TOKEN`; access during an active session depends on your provider plan.
+- **Analyze:** compare lap times and telemetry, review stints, practice long-run pace,
+  recorded qualifying stages, race-control events and separate official results.
+- **Replay:** choose a real weekend/session, prepare it on demand, control playback,
+  seek by time/lap, select drivers, inspect the circuit, tyres, weather and telemetry.
 
 Preparation downloads timing first, then per-driver telemetry. Partial failures keep
 usable timing available and can be retried. Interrupted jobs are marked for retry on
 restart. Qualifying stage data is enriched during FastF1 preparation. Historical
 catalogue metadata is cached while local readiness is refreshed from storage.
+
+Prepared telemetry and compressed replay exports are written through a configurable
+storage backend. Development uses `data/`; production can use any S3-compatible
+service. A verified manifest is published last, and only then is that session's
+data considered ready. Decoded FastF1 data is removed after each preparation attempt,
+including partial failures, and remote files use a bounded local cache.
+
+To index telemetry that predates storage manifests and reclaim its decoded cache:
+
+```sh
+cd backend
+../.venv/bin/python -m scripts.storage_admin --prune-fastf1-cache
+```
+
+To prepare completed sessions sequentially with restart-safe readiness checks:
+
+```sh
+cd backend
+../.venv/bin/python -m scripts.prepare_catalogue --years 2023
+```
+
+Run one season first and inspect storage before continuing through every supported
+year. Re-running the command skips sessions whose telemetry is already ready.
+For a small hosted instance, run ingestion from the local backend configured with
+the production PostgreSQL and object-storage credentials. The Mac performs the
+FastF1 processing while completed objects and database rows go directly to the
+hosted services.
 
 Each browser tab has a replay identity. Cursor checkpoints are saved to PostgreSQL
 at most every five seconds while playing, and on commands. Reload/restart recovery
@@ -80,11 +105,6 @@ in forecast mode are excluded. Unsupported models/ages/compounds use the baselin
 Training implements a ridge pace-delta model, not a validated causal tyre model.
 No pretrained model is shipped; actual accuracy must be assessed on your dataset.
 
-Live polling shares the provider rate budget with downloads and catalogue requests.
-It merges duplicates/corrections and reconstructs state through the same domain
-engine. Updates are batched, not a low-latency streaming guarantee. A three-minute
-lookback catches recent corrections; older corrections need a fresh feed restart.
-
 ## Verification
 
 ```sh
@@ -106,5 +126,22 @@ checks create and clean up their own checkpoint/scenario records.
 Health: `/health`, `/health/db`, `/health/redis`. Metrics: `/metrics` (Prometheus text).
 API documentation: http://localhost:8000/docs.
 
-See [architecture](docs/architecture.md), [strategy model](docs/strategy-model.md),
-[data sources](docs/data-sources.md), and [implementation status](docs/implementation-status.md).
+See [architecture](docs/architecture.md), [cloud ingestion](docs/cloud-ingestion.md),
+[strategy model](docs/strategy-model.md), [data sources](docs/data-sources.md),
+[deployment](docs/deployment.md), and [implementation status](docs/implementation-status.md).
+
+## Public deployment
+
+The root `Dockerfile` builds the React app and FastAPI service into one same-origin
+image. `render.yaml` is a deployable Render blueprint; supply PostgreSQL, Redis and
+S3-compatible storage credentials in the Render dashboard. The backend binds Render's
+`PORT`, applies migrations on startup, serves REST at `/api`, WebSockets at `/ws`, and
+the frontend at `/`. Keep one backend worker because replay controllers and the
+preparation queue are process-local.
+
+Build and exercise that combined image locally with:
+
+```sh
+docker compose --profile deployment build production
+docker compose --profile deployment up production
+```

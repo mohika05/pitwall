@@ -1,13 +1,13 @@
 from fastapi import APIRouter
 from sqlalchemy import text
 
-from app.core.config import settings
 from app.persistence.database import (
     AsyncSessionLocal,
 )
 from app.persistence.repositories.session_repository import (
     SessionRepository,
 )
+from app.services.telemetry import telemetry_service
 
 
 router = APIRouter(
@@ -136,21 +136,8 @@ async def list_sessions():
             # DOES THIS SESSION HAVE FASTF1 TELEMETRY?
             # -------------------------------------------------
 
-            telemetry_directory = (
-                settings.telemetry_dir
-                / str(
-                    session_key
-                )
-            )
-
-
-            telemetry_available = (
-                telemetry_directory.exists()
-                and any(
-                    telemetry_directory.glob(
-                        "*_car.parquet"
-                    )
-                )
+            telemetry_available = bool(
+                await telemetry_service.available_drivers(session_key)
             )
 
 
