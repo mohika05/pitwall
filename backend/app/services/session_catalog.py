@@ -256,16 +256,6 @@ class SessionCatalogService:
                 "application/json",
         }
 
-        if (
-            settings.openf1_access_token
-        ):
-            headers[
-                "Authorization"
-            ] = (
-                "Bearer "
-                f"{settings.openf1_access_token}"
-            )
-
         last_error: Exception | None = None
 
         for attempt in range(
