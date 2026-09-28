@@ -541,7 +541,10 @@ class OpenF1Provider(RaceDataProvider):
             },
         )
 
-        laps = await self._get(
+        # A small number of historical sessions have no OpenF1 laps resource
+        # even though their other timing feeds and FastF1 telemetry exist.
+        # Keep preparing those sessions from the available sources.
+        laps = await self._get_optional(
             "laps",
             {
                 "session_key": session_key

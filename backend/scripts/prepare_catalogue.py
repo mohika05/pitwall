@@ -3,12 +3,40 @@
 import argparse
 import asyncio
 import shutil
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 
+from app.storage.object_store import manifest_key, object_store
+
 TERMINAL = {"ready", "partial", "failed", "interrupted"}
+
+
+async def has_complete_manifest(session_key: int) -> bool:
+    key = manifest_key(session_key)
+    if not await object_store.exists(key):
+        return False
+    try:
+        manifest = await object_store.read_json(key)
+    except (OSError, ValueError):
+        return False
+    finally:
+        await object_store.evict_local(key)
+    return manifest.get("complete") is True
+
+
+def is_due(session: dict, now: datetime, args: argparse.Namespace) -> bool:
+    timestamp = session.get("date_end") or session.get("date_start")
+    if not timestamp:
+        return False
+    ended_at = datetime.fromisoformat(timestamp)
+    if ended_at > now - timedelta(minutes=args.completion_delay_minutes):
+        return False
+    return not (
+        args.recent_days is not None
+        and ended_at < now - timedelta(days=args.recent_days)
+    )
 
 
 async def wait_for_job(client: httpx.AsyncClient, session_key: int) -> dict:
@@ -42,14 +70,14 @@ async def run(args: argparse.Namespace) -> int:
         for year in years:
             response = await client.get(f"/catalog/{year}")
             response.raise_for_status()
+            now = datetime.now(UTC)
             sessions = [
                 session
                 for meeting in response.json()["meetings"]
                 if "testing" not in str(meeting.get("meeting_name", "")).lower()
                 for session in meeting["sessions"]
                 if not session.get("is_cancelled")
-                and session.get("date_start")
-                and datetime.fromisoformat(session["date_start"]) <= datetime.now(UTC)
+                and is_due(session, now, args)
                 and (
                     not args.session_keys
                     or int(session["session_key"]) in args.session_keys
@@ -60,7 +88,10 @@ async def run(args: argparse.Namespace) -> int:
                     print(f"Stopped after {processed} requested sessions")
                     return 1 if failures else 0
                 key = int(session["session_key"])
-                if session.get("telemetry_available") and not args.force:
+                if not args.force and (
+                    session.get("telemetry_available")
+                    or await has_complete_manifest(key)
+                ):
                     print(f"{key}: already ready")
                     continue
                 free_gb = shutil.disk_usage(Path.cwd()).free / 1_000_000_000
@@ -113,6 +144,17 @@ def main() -> None:
     parser.add_argument("--min-free-gb", type=float, default=3.0)
     parser.add_argument("--max-sessions", type=int)
     parser.add_argument("--session-keys", nargs="*", type=int, default=[])
+    parser.add_argument(
+        "--recent-days",
+        type=float,
+        help="Only prepare sessions that ended within this many days",
+    )
+    parser.add_argument(
+        "--completion-delay-minutes",
+        type=float,
+        default=0,
+        help="Wait this long after a session ends before preparing it",
+    )
     raise SystemExit(asyncio.run(run(parser.parse_args())))
 
 

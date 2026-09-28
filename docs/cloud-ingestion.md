@@ -141,3 +141,25 @@ budget, leaving headroom under R2's 10 GB Standard free allowance.
 Do not start ML retraining or deployment until every intended session has a complete
 manifest, the final preflight passes, and failed/partial preparation jobs have been
 reviewed.
+
+## 7. Automatic post-session ingestion
+
+The `Historical ingestion` GitHub Actions workflow runs every six hours and can also
+be started manually. It waits two hours after a session ends, inspects the previous
+30 days, checks R2 manifests directly, and prepares only sessions without a complete
+manifest. This direct cloud check prevents a fresh Actions runner from redownloading
+the historical archive when its Redis instance starts empty.
+
+Configure these GitHub Actions repository secrets before enabling the schedule:
+
+```text
+DATABASE_URL
+S3_BUCKET
+S3_ENDPOINT_URL
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+```
+
+The workflow uses an ephemeral Redis service, applies migrations, removes FastF1
+cache data after each session, and runs the cloud preflight when ingestion ends.
+Only one scheduled or manually dispatched ingestion run can execute at a time.

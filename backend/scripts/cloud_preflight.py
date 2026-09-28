@@ -66,7 +66,7 @@ async def storage_check() -> tuple[int, int, int]:
     count, total, manifests = await asyncio.to_thread(inventory)
     print(
         f"Bucket inventory: {count} objects, {total / 1_000_000_000:.3f} GB, "
-        f"{manifests} completed-session manifests"
+        f"{manifests} session manifests"
     )
     return count, total, manifests
 
@@ -105,7 +105,7 @@ async def run(args: argparse.Namespace) -> None:
             f"Remote objects already exceed the {args.max_storage_gb:.2f} GB storage budget"
         )
     print(
-        f"CLOUD PREFLIGHT PASSED · {manifests} sessions ready · "
+        f"CLOUD PREFLIGHT PASSED · {manifests} session manifests · "
         f"{args.max_storage_gb - total / 1_000_000_000:.3f} GB budget remaining"
     )
 

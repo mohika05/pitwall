@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pandas as pd
 
 from app.core.config import settings
+from app.core.exceptions import ExternalDataError
 from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
 from app.ingestion.providers.openf1 import OpenF1Provider
 from app.ingestion.service import IngestionService
@@ -151,6 +152,22 @@ class PreparationService:
                             stored_files.extend(objects)
                             succeeded += 1
                             telemetry_drivers.append(driver)
+                        except ExternalDataError as exc:
+                            # Historical providers occasionally expose laps for a
+                            # driver without publishing both telemetry channels.
+                            # Keep the verified drivers usable and describe the
+                            # source-data gap instead of making the whole session
+                            # partial.
+                            logger.warning(
+                                "Telemetry unavailable for %s in session %s: %s",
+                                driver,
+                                key,
+                                exc,
+                            )
+                            unavailable_drivers.append(driver)
+                            job["telemetry_unavailable_drivers"] = sorted(
+                                set(unavailable_drivers)
+                            )
                         except Exception as exc:
                             logger.exception("Telemetry preparation failed for %s", driver)
                             job["errors"].append(f"{driver}: {type(exc).__name__}")
@@ -159,8 +176,12 @@ class PreparationService:
                             message=f"Telemetry {index + 1}/{len(drivers)} drivers",
                         )
                         await self.save(job)
+                    if succeeded == 0:
+                        raise ValueError(
+                            "FastF1 produced no usable telemetry for any session driver"
+                        )
                     _load_frame.cache_clear()
-                    job["telemetry_ready"] = bool(drivers) and succeeded == len(drivers)
+                    job["telemetry_ready"] = not job["errors"]
                     job["telemetry_drivers_ready"] = succeeded
                     manifest = {
                         "version": 1,
