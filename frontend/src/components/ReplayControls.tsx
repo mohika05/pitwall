@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { pauseReplay, playReplay, resetReplay, setReplaySpeed, request } from '../lib/api'
+import type { ReplayStatus } from '../lib/api'
 import { useRaceStore } from '../stores/raceStore'
 import type { Analysis } from '../types/analysis'
 
@@ -15,12 +16,23 @@ export function ReplayControls({ analysis }: { analysis?: Analysis }) {
   const current = state ? Date.parse(state.replay_timestamp) : start
   const length = Math.max(0, (end - start) / 1000)
   const elapsed = Math.max(0, (current - start) / 1000)
-  async function run(action: () => Promise<unknown>) {
+  function applyStatus(status: ReplayStatus) {
+    if (!status.state) return
+    useRaceStore.getState().applyRealtimeState({
+      revision: status.revision ?? 0,
+      event_index: status.event_index,
+      total_events: status.total_events,
+      playing: status.playing,
+      speed: status.speed,
+      state: status.state,
+    })
+  }
+  async function run(action: () => Promise<ReplayStatus>) {
     setBusy(true); setMessage('')
-    try { await action() } catch (e) { setMessage(String(e)) } finally { setBusy(false) }
+    try { applyStatus(await action()) } catch (e) { setMessage(String(e)) } finally { setBusy(false) }
   }
   function seek(seconds: number) {
-    return run(() => request(`/replay/${key}/seek/time`, { method: 'POST', body: JSON.stringify({ timestamp: new Date(start + seconds * 1000).toISOString() }) }))
+    return run(() => request<ReplayStatus>(`/replay/${key}/seek/time`, { method: 'POST', body: JSON.stringify({ timestamp: new Date(start + seconds * 1000).toISOString() }) }))
   }
   function commit() { if (drag !== null) void seek(drag).finally(() => setDrag(null)) }
   async function bookmark() {

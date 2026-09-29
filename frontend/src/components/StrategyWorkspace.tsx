@@ -51,6 +51,7 @@ export function StrategyWorkspace({ analysis }: { analysis: Analysis }) {
   const driver = analysis.drivers.find(d => d.name_acronym === selectedDriver)
   const session = analysis.session.session_key
   const maxLap = Math.max(1, ...analysis.laps.filter(l => l.driver === selectedDriver).map(l => l.lap))
+  const completedLap = state?.drivers[driver?.driver_number ?? 0]?.current_lap ?? 0
   const [result, setResult] = useState<Scenario | null>(null)
   const [comparison, setComparison] = useState('')
   const [busy, setBusy] = useState(false)
@@ -102,7 +103,7 @@ export function StrategyWorkspace({ analysis }: { analysis: Analysis }) {
   const acceptedModels = visibleModels.filter(model => model.version >= 2 && model.accepted)
   const other = saved.data?.find(s => s.id === comparison)
   return <div className="workspace-stack">
-    <div className="workspace-heading"><div><span className="eyebrow">STRATEGY LAB · {selectedDriver}</span><h2>Change the call.</h2></div><span className="muted">Branch from replay · completed lap {state?.drivers[driver?.driver_number ?? 0]?.current_lap ?? 0}</span></div>
+    <div className="workspace-heading"><div><span className="eyebrow">STRATEGY LAB · {selectedDriver}</span><h2>Change the call.</h2></div><span className="muted">Branch from replay · completed lap {completedLap}</span></div>
     <aside className="scope-notice" aria-label="Strategy simulator scope"><strong>Experimental dry-race model</strong><span>Supports Soft, Medium and Hard tyres using recorded dry running. Wet and mixed-weather strategy is not calibrated, so those scenarios are unavailable.</span></aside>
     <section className="strategy-guide" aria-label="How the strategy simulator works">
       <div><b>1</b><span><strong>Choose the decision moment</strong>Use the replay controls above to stop after at least three clean laps. The simulator learns the selected driver's recent pace and current race position.</span></div>
@@ -110,15 +111,15 @@ export function StrategyWorkspace({ analysis }: { analysis: Analysis }) {
       <div><b>3</b><span><strong>Compare the outcome</strong>A negative finish delta means your plan was estimated faster. The range shows how sensitive that answer is to the assumptions.</span></div>
     </section>
     <p className="data-note">Running a scenario pauses the historical replay. Results are lap-level estimates rather than predictions of an exact finishing position.</p>
-    <div className="strategy-grid"><form className="panel strategy-form" onSubmit={e => { e.preventDefault(); void run(e.currentTarget) }}>
+    <div className="strategy-grid"><form key={`${session}-${selectedDriver}-${completedLap}`} className="panel strategy-form" onSubmit={e => { e.preventDefault(); void run(e.currentTarget) }}>
       <div className="panel-title">Alternative strategy</div><div className="form-grid">
       <label>Give this plan a name<input name="name" defaultValue="Earlier stop" required maxLength={100} /><small>For example: “Early undercut on Hard tyres”.</small></label>
       <label>What should this plan be compared with?<select name="mode" value={mode} onChange={e => setMode(e.target.value)}><option value="historical">What actually happened in the race</option><option value="forecast">Another strategy I choose</option></select><small>{mode === 'historical' ? 'Uses the recorded laps after this replay moment.' : 'Compares two plans using only information available now.'}</small></label>
-      <label>When should the driver pit?<input name="pit_lap" aria-label="Pit lap" type="number" min={(state?.current_lap ?? 0) + 1} max={150} defaultValue={Math.min(maxLap, (state?.current_lap ?? 0) + 3)} required /><small>Enter a lap after the currently completed lap.</small></label>
+      <label>When should the driver pit?<input name="pit_lap" aria-label="Pit lap" type="number" min={completedLap + 1} max={150} defaultValue={Math.min(maxLap, completedLap + 3)} required /><small>Enter a lap after the currently completed lap.</small></label>
       <label>Which tyre should be fitted?<select name="compound" defaultValue="HARD"><option value="SOFT">Soft · fastest, shorter life</option><option value="MEDIUM">Medium · balanced pace and life</option><option value="HARD">Hard · slower, longer life</option></select></label>
-      <label>How far should the comparison run?<input name="total_laps" aria-label="Simulate through lap" type="number" min={(state?.current_lap ?? 0) + 1} max={150} defaultValue={maxLap} required /><small>Usually the final race lap, or a shorter decision horizon.</small></label>
+      <label>How far should the comparison run?<input name="total_laps" aria-label="Simulate through lap" type="number" min={completedLap + 1} max={150} defaultValue={maxLap} required /><small>Usually the final race lap, or a shorter decision horizon.</small></label>
       <label>How should tyre pace be estimated?<select name="model_id"><option value="">Transparent formula · recommended default</option>{acceptedModels.map(m => <option key={m.id} value={m.id}>Validated ML · {m.training_sessions.length} training race{m.training_sessions.length === 1 ? '' : 's'} · tested on {sessionName(m.holdout_session)} · {m.mae_seconds.toFixed(2)}s error</option>)}</select><small>The ML option only appears after it beats the simple baseline on an unseen race. Repeated runs using the same races are shown once.</small></label>
-      {mode === 'forecast' && <><label>When would the other plan pit?<input name="baseline_pit_lap" type="number" min={(state?.current_lap ?? 0) + 1} max={150} required /></label><label>Which tyre would the other plan use?<select name="baseline_compound"><option>HARD</option><option>MEDIUM</option><option>SOFT</option></select></label></>}
+      {mode === 'forecast' && <><label>When would the other plan pit?<input name="baseline_pit_lap" type="number" min={completedLap + 1} max={150} required /></label><label>Which tyre would the other plan use?<select name="baseline_compound"><option>HARD</option><option>MEDIUM</option><option>SOFT</option></select></label></>}
       </div><details className="assumptions"><summary>Model assumptions & tyre allocation</summary><div className="form-grid">
       {[
         ['pit_lane_loss', 'Pit-lane travel time', 'seconds', 'Time lost entering, travelling through and leaving the pit lane.', 20, 0, 90], ['stationary_time', 'Tyre-change time', 'seconds', 'Time stationary in the pit box.', 2.5, 0, 60],

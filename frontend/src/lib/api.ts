@@ -13,6 +13,8 @@ import type {
     YearCatalogue,
 } from "../types/catalog"
 
+import type { RaceState } from "../types/race"
+
 const API_BASE =
     import.meta.env
         .VITE_API_BASE_URL ??
@@ -60,6 +62,7 @@ export async function request<T>(
 
 
 export interface ReplayStatus {
+    revision?: number
     session_key: number
 
     playing: boolean
@@ -70,6 +73,7 @@ export interface ReplayStatus {
 
     replay_timestamp: string
     current_lap: number
+    state?: RaceState
 }
 
 

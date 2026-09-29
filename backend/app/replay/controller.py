@@ -88,6 +88,7 @@ class ReplayController:
             "total_events": len(self.engine.events),
             "replay_timestamp": (self.engine.state.replay_timestamp.isoformat()),
             "current_lap": (self.engine.state.current_lap),
+            "state": self.engine.state.model_dump(mode="json"),
         }
 
     # -----------------------------------------------------
