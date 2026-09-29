@@ -41,12 +41,18 @@ export async function request<T>(
     )
 
     if (!response.ok) {
-        const text =
-        await response.text()
-
-        throw new Error(
-        `API ${response.status}: ${text}`
-        )
+        const text = await response.text()
+        let message = text
+        try {
+            const payload = JSON.parse(text) as { detail?: unknown }
+            if (typeof payload.detail === "string") message = payload.detail
+            else if (Array.isArray(payload.detail)) {
+                message = payload.detail.map(item => typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item)).join("; ")
+            }
+        } catch {
+            // Keep a plain-text server message when the response is not JSON.
+        }
+        throw new Error(message || `Request failed (${response.status})`)
     }
 
     return response.json()

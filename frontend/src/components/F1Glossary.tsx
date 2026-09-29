@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 const F1_TERMS = {
   'DRS': 'Drag Reduction System. A movable rear-wing flap that reduces drag and raises straight-line speed when its use is permitted.',
@@ -31,19 +31,26 @@ type F1TermName = keyof typeof F1_TERMS
 export function F1Term({ term, children = term, chip = false }: { term: F1TermName; children?: ReactNode; chip?: boolean }) {
   const id = `term-${useId().replaceAll(':', '')}`
   const [position, setPosition] = useState<{ left: number; top: number }>()
+  const [open, setOpen] = useState(false)
   function positionTooltip(element: HTMLElement) {
     const bounds = element.getBoundingClientRect()
     const halfWidth = Math.min(145, (window.innerWidth - 24) / 2)
     setPosition({ left: Math.max(halfWidth + 12, Math.min(window.innerWidth - halfWidth - 12, bounds.left + bounds.width / 2)), top: bounds.top - 9 })
   }
-  return <span className={`f1-term${chip ? ' glossary-chip' : ''}`} tabIndex={0} aria-describedby={id} onMouseEnter={event => positionTooltip(event.currentTarget)} onFocus={event => positionTooltip(event.currentTarget)}>
+  function handleKeyDown(event: KeyboardEvent<HTMLSpanElement>) {
+    if (event.key === 'Escape') {
+      setOpen(false)
+      event.currentTarget.blur()
+    }
+  }
+  return <span className={`f1-term${chip ? ' glossary-chip' : ''}${open ? ' tooltip-open' : ''}`} tabIndex={0} aria-describedby={id} aria-expanded={open} onMouseEnter={event => positionTooltip(event.currentTarget)} onFocus={event => positionTooltip(event.currentTarget)} onBlur={() => setOpen(false)} onClick={event => { positionTooltip(event.currentTarget); setOpen(value => !value) }} onKeyDown={handleKeyDown}>
     {children}<span id={id} role="tooltip" className="f1-tooltip" style={position}><strong>{term}</strong>{F1_TERMS[term]}</span>
   </span>
 }
 
 export function F1Glossary() {
-  return <details className="f1-glossary panel" open>
-    <summary><span><span className="eyebrow">NEW TO FORMULA 1?</span>F1 terminology</span><small>Hover or focus a term to learn it</small></summary>
+  return <details className="f1-glossary panel">
+    <summary><span><span className="eyebrow">NEW TO FORMULA 1?</span>Open the F1 glossary</span><small>Quick terminology reference</small></summary>
     <div className="glossary-terms">
       {(Object.keys(F1_TERMS) as F1TermName[]).map(term => <F1Term key={term} term={term} chip />)}
     </div>
