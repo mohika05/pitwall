@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 
 from fastapi import (
@@ -30,6 +29,11 @@ router = APIRouter(
 async def telemetry_snapshot(
     session_key: int,
     timestamp: datetime,
+    driver: str | None = Query(
+        default=None,
+        min_length=2,
+        max_length=3,
+    ),
     tolerance_seconds: float = Query(
         default=2.0,
         ge=0.1,
@@ -50,26 +54,26 @@ async def telemetry_snapshot(
                 detail=str(exc),
             ) from exc
 
+    selected_driver = driver.upper() if driver else None
+
     async def load_driver(
-        driver,
+        session_driver,
     ):
-        if not driver.name_acronym:
+        if not session_driver.name_acronym:
             return None
 
         try:
-            snapshot = (
-                await telemetry_service.snapshot(
-                    session_key=(
-                        session_key
-                    ),
-                    driver=(
-                        driver.name_acronym
-                    ),
-                    timestamp=timestamp,
-                    tolerance_seconds=(
-                        tolerance_seconds
-                    ),
-                )
+            loader = (
+                telemetry_service.snapshot
+                if selected_driver is None
+                or session_driver.name_acronym.upper() == selected_driver
+                else telemetry_service.position_snapshot
+            )
+            snapshot = await loader(
+                session_key=session_key,
+                driver=session_driver.name_acronym,
+                timestamp=timestamp,
+                tolerance_seconds=tolerance_seconds,
             )
 
         except (
@@ -78,10 +82,10 @@ async def telemetry_snapshot(
         ) as exc:
             return {
                 "driver_number": (
-                    driver.driver_number
+                    session_driver.driver_number
                 ),
                 "driver": (
-                    driver.name_acronym
+                    session_driver.name_acronym
                 ),
                 "error": str(exc),
                 "car": None,
@@ -90,19 +94,16 @@ async def telemetry_snapshot(
 
         snapshot[
             "driver_number"
-        ] = driver.driver_number
+        ] = session_driver.driver_number
 
         return snapshot
 
-    results = await asyncio.gather(
-        *[
-            load_driver(
-                driver
-            )
-            for driver
-            in context.drivers
-        ]
-    )
+    # Loading every driver's full car and position frame concurrently exceeds
+    # the 512 MiB deployment tier. Keep peak memory bounded and return full car
+    # telemetry only for the driver the viewer selected.
+    results = []
+    for session_driver in context.drivers:
+        results.append(await load_driver(session_driver))
 
     return {
         "session_key": session_key,

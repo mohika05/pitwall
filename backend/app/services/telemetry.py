@@ -71,10 +71,7 @@ def _target_timestamp(
     return target
 
 
-@lru_cache(
-    maxsize=128
-)
-def _load_frame(
+def _load_frame_uncached(
     path_string: str,
 ) -> pd.DataFrame:
     path = Path(
@@ -120,6 +117,24 @@ def _load_frame(
     )
 
     return frame
+
+
+@lru_cache(maxsize=2)
+def _load_car_frame(path_string: str) -> pd.DataFrame:
+    # Full car channels are the largest in-memory frames. Retain only the
+    # drivers currently being inspected instead of every driver ever viewed.
+    return _load_frame_uncached(path_string)
+
+
+@lru_cache(maxsize=32)
+def _load_position_frame(path_string: str) -> pd.DataFrame:
+    # Position channels are much smaller and are reused for the circuit map.
+    return _load_frame_uncached(path_string)
+
+
+def clear_telemetry_cache() -> None:
+    _load_car_frame.cache_clear()
+    _load_position_frame.cache_clear()
 
 
 def _nearest_row(
@@ -234,8 +249,9 @@ class TelemetryService:
             telemetry_key(session_key, driver, kind)
         )
 
+        loader = _load_car_frame if kind == "car" else _load_position_frame
         return await asyncio.to_thread(
-            _load_frame,
+            loader,
             str(path),
         )
 
@@ -340,6 +356,31 @@ class TelemetryService:
             "position_sample_age_seconds": (
                 position_delta
             ),
+        }
+
+    async def position_snapshot(
+        self,
+        *,
+        session_key: int,
+        driver: str,
+        timestamp: datetime,
+        tolerance_seconds: float = 2.0,
+    ) -> dict[str, Any]:
+        """Return the lightweight position channel used by the track map."""
+        position_frame = await self._frame(session_key, driver, "position")
+        position_row, position_delta = await asyncio.to_thread(
+            _nearest_row,
+            position_frame,
+            timestamp,
+            tolerance_seconds,
+        )
+        return {
+            "driver": driver.upper(),
+            "requested_timestamp": timestamp.isoformat(),
+            "car": None,
+            "position": self._row_to_dict(position_row, self.POSITION_FIELDS),
+            "car_sample_age_seconds": None,
+            "position_sample_age_seconds": position_delta,
         }
 
     async def window(

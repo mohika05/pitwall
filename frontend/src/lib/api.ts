@@ -155,12 +155,15 @@ export function seekReplayIndex(
 
 export function getTelemetrySnapshot(
     sessionKey: number,
-    timestamp: string
+    timestamp: string,
+    driver?: string
     ) {
     const params =
         new URLSearchParams({
         timestamp,
         })
+
+    if (driver) params.set("driver", driver)
 
     return request<TelemetrySnapshot>(
         `/telemetry/${sessionKey}/snapshot?${params}`

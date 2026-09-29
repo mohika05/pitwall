@@ -51,17 +51,21 @@ export function TelemetrySync() {
             | string
             | null = null
 
+        let lastDriver = ""
+        let retryAfter = 0
+
 
         async function sync() {
             if (
             stopped ||
-            inFlight
+            inFlight ||
+            Date.now() < retryAfter
             ) {
             return
             }
 
 
-            const { state: race, revision, streamEpoch } = useRaceStore.getState()
+            const { state: race, revision, streamEpoch, selectedDriver } = useRaceStore.getState()
 
 
             if (!race) {
@@ -74,8 +78,8 @@ export function TelemetrySync() {
 
 
             if (
-            timestamp ===
-            lastTimestamp && revision === lastRevision && streamEpoch === lastEpoch
+                timestamp ===
+                lastTimestamp && revision === lastRevision && streamEpoch === lastEpoch && selectedDriver === lastDriver
             ) {
             return
             }
@@ -88,7 +92,8 @@ export function TelemetrySync() {
             const telemetry =
                 await getTelemetrySnapshot(
                 activeSessionKey,
-                timestamp
+                timestamp,
+                selectedDriver
                 )
 
 
@@ -101,6 +106,8 @@ export function TelemetrySync() {
             lastRevision = revision
             lastTimestamp =
                 timestamp
+            lastDriver = selectedDriver
+            retryAfter = 0
 
 
             useRaceStore
@@ -111,6 +118,7 @@ export function TelemetrySync() {
                 streamEpoch
                 )
             } catch (error) {
+            retryAfter = Date.now() + 5000
             console.error(
                 "Telemetry sync failed",
                 error

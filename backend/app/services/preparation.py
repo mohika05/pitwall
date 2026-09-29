@@ -15,7 +15,7 @@ from app.persistence.database import AsyncSessionLocal
 from app.persistence.repositories.event_repository import EventRepository
 from app.persistence.repositories.ingestion_repository import IngestionRepository
 from app.persistence.repositories.workspace_repository import workspace_repository as records
-from app.services.telemetry import _load_frame
+from app.services.telemetry import clear_telemetry_cache
 from app.storage.object_store import manifest_key, object_store
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ class PreparationService:
                         raise ValueError(
                             "FastF1 produced no usable telemetry for any session driver"
                         )
-                    _load_frame.cache_clear()
+                    clear_telemetry_cache()
                     job["telemetry_ready"] = not job["errors"]
                     job["telemetry_drivers_ready"] = succeeded
                     manifest = {
