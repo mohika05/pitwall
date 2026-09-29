@@ -5,11 +5,30 @@ Pitwall uses three storage layers during historical ingestion:
 - Cloudflare R2 Standard stores compressed replay events, Parquet telemetry and
   completed-session manifests.
 - PostgreSQL stores searchable session, driver, lap, stint and pit-stop metadata.
-- The Mac temporarily decodes one FastF1 session at a time. Both the decoded cache
-  and the one-gigabyte object cache are disposable.
+- The ingestion runner temporarily decodes one FastF1 session at a time. Both the
+  decoded cache and bounded object cache are disposable.
 
 Redis can remain local during ingestion. A hosted Redis service is only required when
 the application is deployed.
+
+```mermaid
+flowchart LR
+    SRC[OpenF1 + FastF1] --> RUN[Ephemeral ingestion runner]
+    RUN --> DB[(Neon PostgreSQL<br/>searchable metadata)]
+    RUN --> R2[(Cloudflare R2<br/>events and telemetry)]
+    RUN --> TMP[(Local decoded/cache files)]
+    R2 --> VERIFY[Size/checksum verification]
+    VERIFY --> MANIFEST[Complete manifest]
+    MANIFEST --> CLEAN[Delete disposable local files]
+```
+
+| Data | Canonical location | Safe to delete locally? |
+| --- | --- | --- |
+| Session/driver/lap/stint metadata | PostgreSQL | Yes, after commit |
+| Compressed replay events | R2 | Yes, after verified upload |
+| Per-driver telemetry Parquet | R2 | Yes, after verified upload |
+| Session completion manifest | R2 | Local materialization only |
+| FastF1 decoded/request cache | None | Yes; always disposable |
 
 ## 1. Create the R2 bucket
 
@@ -34,10 +53,10 @@ Create a Neon Postgres project named `pitwall` in a nearby region. Use the direc
 connection string for the ingestion run. Pitwall converts `postgresql://` to
 `postgresql+asyncpg://` and converts `sslmode=require` for the async driver.
 
-The current local database is 61 MB, of which 48 MB is old duplicated race-event
-data. New historical events are stored only as compressed R2 objects. The remaining
-metadata projects below Neon's current 0.5 GB free storage limit, but storage usage
-must be checked during the batch.
+New historical events are stored as compressed R2 objects rather than duplicated into
+PostgreSQL when `PERSIST_HISTORICAL_EVENTS_IN_DATABASE=false`. Check the actual Neon
+storage and compute allowances in its dashboard during a batch; provider limits can
+change independently of this repository.
 
 ## 3. Configure the untracked `.env`
 
@@ -78,7 +97,7 @@ The preflight performs a real R2 upload, verifies its SHA-256 metadata, download
 compares the object, deletes it, lists bucket usage, connects to PostgreSQL and checks
 local free space. It never prints credentials.
 
-## 5. Preserve the existing sample
+## 5. Preserve or migrate an existing local sample
 
 Before changing `DATABASE_URL`, dump the current local database:
 
@@ -95,7 +114,7 @@ pg_restore --dbname="$NEON_DATABASE_URL" --no-owner --no-privileges \
   --clean --if-exists /tmp/pitwall-local.dump
 ```
 
-Then upload the 11 existing canonical sessions to R2:
+Then upload any existing canonical local sessions to R2:
 
 ```sh
 cd backend
@@ -103,8 +122,8 @@ cd backend
 ../.venv/bin/python -m scripts.cloud_preflight
 ```
 
-The second preflight should report 11 completed-session manifests and roughly
-0.18 GB of canonical objects.
+The second preflight reports the actual manifest count and canonical object size. Do
+not rely on a hard-coded count because it changes as sessions are prepared.
 
 ## 6. Rehearse and run the batch
 
@@ -139,9 +158,19 @@ start a new session below 3 GB of local free space. Rerunning the same command r
 from the first incomplete session. The preflight enforces a default 9.5 GB remote
 budget, leaving headroom under R2's 10 GB Standard free allowance.
 
-Do not start ML retraining or deployment until every intended session has a complete
-manifest, the final preflight passes, and failed/partial preparation jobs have been
-reviewed.
+Before retraining a model or declaring an ingestion batch complete, confirm that every
+intended session has a complete manifest, the final preflight passes and failed or
+partial jobs have been reviewed.
+
+### Job and restart behavior
+
+| State | Meaning | Next action |
+| --- | --- | --- |
+| `queued` / `preparing` | Worker owns an active request | Wait and monitor progress |
+| `ready` | Timing and requested telemetry were published | No action; reruns skip it |
+| `partial` | Usable timing exists but some requested outputs failed | Review errors and retry |
+| `failed` | Session did not reach a usable prepared state | Fix provider/storage issue and retry |
+| `interrupted` | Process ended while the job was active | Rerun; startup will not resume it silently |
 
 ## 7. Automatic post-session ingestion
 

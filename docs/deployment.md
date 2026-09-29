@@ -5,6 +5,18 @@ REST endpoints under `/api`, and replay WebSockets under `/ws`. Keeping everythi
 one origin avoids a second frontend service, CORS configuration, and separate
 WebSocket routing.
 
+Public deployment: **https://pitwall-be4a.onrender.com**
+
+```mermaid
+flowchart LR
+    U[Browser] <-->|HTTPS + WSS| R[Render web service<br/>React + FastAPI]
+    R <--> K[(Render Key Value<br/>disposable cache)]
+    R <--> N[(Neon PostgreSQL<br/>durable metadata)]
+    R <--> O[(Cloudflare R2<br/>durable events and Parquet)]
+    G[GitHub Actions<br/>scheduled ingestion] --> N
+    G --> O
+```
+
 ## Zero-cost stack
 
 | Part | Service | Free-plan role |
@@ -13,7 +25,7 @@ WebSocket routing.
 | Replay state | Render free Key Value | Disposable Redis-compatible state |
 | Metadata | Existing Neon free project | Durable PostgreSQL metadata |
 | Replay and telemetry | Existing Cloudflare R2 Standard bucket | Durable objects below the 10 GB-month allowance |
-| Future ingestion | GitHub Actions | Checks completed sessions and publishes missing data |
+| Post-session ingestion | GitHub Actions | Checks completed sessions and publishes missing data |
 
 The root `render.yaml` creates the Render web service and Key Value instance together.
 Do not add a Render Postgres database: free Render databases expire after 30 days,
@@ -24,7 +36,7 @@ WebSocket traffic. Its first request after sleeping can take about a minute. The
 Key Value instance is in-memory and may be reset; that is acceptable because replay
 controllers are disposable and historical data remains in Neon and R2.
 
-## Before deployment
+## Deploying a new environment
 
 1. Push the reviewed deployment changes to GitHub.
 2. Rotate any R2 key that has been displayed publicly and update the GitHub Actions
@@ -67,9 +79,21 @@ The deployment deliberately uses a 256 MiB local object cache. Render's filesyst
 ephemeral, so cache files can disappear safely during sleep, restart, or deployment.
 Canonical data always remains in R2.
 
+## Production invariants
+
+| Requirement | Reason |
+| --- | --- |
+| One Uvicorn worker | Replay controllers and preparation queue are process-local |
+| S3-compatible canonical storage | Render's filesystem is ephemeral |
+| External PostgreSQL | Metadata and workspace records must survive deploys |
+| Disposable Redis semantics | Losing cached replay state must not lose history |
+| 256 MiB object cache | Bounds ephemeral local storage used for materialized objects |
+| Complete manifest published last | Readers never treat partial uploads as ready |
+
 ## Verify the public deployment
 
-Replace `<APP>` with the hostname Render assigns:
+For this project, `<APP>` is `pitwall-be4a`. For another deployment, replace it with
+the hostname Render assigns:
 
 ```text
 https://<APP>.onrender.com/health
@@ -89,10 +113,14 @@ Then open the root URL and verify:
 6. A direct browser refresh still serves the React app.
 7. The replay connection uses `wss://`.
 
+The deployed Singapore 2025 verification loaded the session catalogue, sought within
+a 29,823-event replay, synchronized Russell's completed-lap state and produced a
+53-lap strategy trajectory without restarting the 512 MB service.
+
 ## Free-tier limits
 
-- Render provides 750 free instance hours per workspace each month. Idle time does not
-  consume hours after the service spins down.
+- Free-plan quotas and included instance hours are account-level provider policy. Check
+  the Render usage dashboard before relying on a specific monthly allowance.
 - Render can suspend a free service for unusually high outbound traffic, including
   large repeated R2 downloads. The 256 MiB local cache reduces repeated reads while an
   instance remains awake.
@@ -105,7 +133,9 @@ Then open the root URL and verify:
 
 Provider references: [Render free services](https://render.com/docs/free),
 [Render Blueprint reference](https://render.com/docs/blueprint-spec), and
-[Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/).
+[Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/). Check
+[Neon's plan documentation](https://neon.com/docs/introduction/plans) and the Neon
+console before a large metadata batch because provider allowances can change.
 
 ## Local production-image check
 

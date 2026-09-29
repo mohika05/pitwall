@@ -1,37 +1,147 @@
-# Strategy model v1
+# Strategy model
 
-Inputs: historical session, driver, branch timestamp, pit lap, target compound,
-horizon and explicit model assumptions. The branch uses the selected driver's last
-completed lap. At least three clean historical laps are required to estimate pace.
+Pitwall answers a constrained question: from a recorded replay moment, how does one
+alternative dry-tyre pit plan compare with a selected baseline under explicit lap-level
+assumptions? It does not predict an exact finishing position or simulate reactive teams.
 
-The deterministic model separates base pace, compound offset, age-dependent wear,
-fuel trend, warm-up, traffic penalty, pit transit loss and stationary service time.
-Rejoin estimates use numeric gaps at the branch point. Opponents are not reactive;
-those estimates should not be interpreted as a full simulated final classification.
+## Request and eligibility
 
-Historical mode compares simulated elapsed time against recorded future lap times,
-reuses observed neutralization context, replaces the next recorded stop and retains
-later recorded stops. Decision-time mode does not use future lap data: it compares
-against a user-specified baseline stop and holds branch conditions constant. These
-are distinct questions and are labeled separately in the UI.
+| Input | Purpose |
+| --- | --- |
+| Session, driver and timestamp | Identify the historical branch state |
+| Pit lap and compound | Define the alternative call |
+| Horizon | Set the final comparison lap |
+| Comparison mode | Recorded future or a second decision-time plan |
+| Pit/service assumptions | Model travel through the lane and stationary time |
+| Pace assumptions | Degradation, fuel gain and warm-up loss |
+| Traffic assumptions | Approximate cost after rejoining near another car |
+| Safety-car multiplier | Reduce pit-lane loss during a neutralization |
+| Available compounds/rule toggle | Apply the user's supplied dry-tyre constraints |
+| Uncertainty fraction | Produce low/high assumption variants |
 
-Sensitivity reruns the simulation with lower/higher pit-loss, degradation and traffic
-assumptions. It reports the range of those runs, not a statistical confidence interval.
-Saved results include inputs, model identifier, branch fingerprint and trajectories.
+A branch is accepted only when:
 
-The ML module fits ridge regression to pace deltas with tyre-age and compound
-features, centers pace by driver/session and holds the latest session out entirely.
-Eligible version 2 models must beat the held-out constant-delta baseline by at least
-five percent. Older model records are not eligible. The simulator rejects
-models trained/validated on its target session and models using future data in a
-forecast. Outside the modeled compound/age range, it falls back to the tyre model.
-Fuel, track evolution and traffic still confound this model; validation MAE does not
-establish causal counterfactual accuracy.
+- the session is a Race or Sprint;
+- the selected driver is present and has not retired, failed to start or been
+  disqualified at the branch;
+- pit and horizon laps follow that driver's last completed lap;
+- at least three clean, non-pit-out, non-neutralized laps exist before the branch; and
+- both the current and requested compounds are Soft, Medium or Hard.
 
-Recorded-stop validation excludes mixed-weather races, neutralized horizons, abnormal
-lap durations and sessions with fewer than five supported cases. It compares model
-MAE with a constant-pace-plus-pit-loss baseline. Limitations: wet/intermediate pace is
-not calibrated; tyre allocation and dry-compound
-constraints are user supplied; race interruptions, penalties, overtaking and opponent
-responses are not fully simulated. Circuit-specific calibration and broader backtests
-are required before interpreting predicted gains as realistic strategy recommendations.
+When enabled for a Race, the user-supplied compound constraint requires at least two
+distinct dry compounds across recorded and proposed stints. Pitwall does not know the
+driver's official tyre-set inventory.
+
+## Simulation pipeline
+
+```mermaid
+flowchart TD
+    B[Seek immutable replay to branch time] --> H[Select up to five recent clean laps]
+    H --> P[Estimate driver base pace]
+    P --> L[Iterate every lap to the horizon]
+    L --> T[Apply compound and tyre-age delta]
+    T --> F[Apply fuel trend]
+    F --> S{Pit on this lap?}
+    S -- yes --> C[Change compound and add<br/>lane, service and warm-up loss]
+    S -- no --> R[Continue current stint]
+    C --> G[Estimate rejoin and traffic]
+    R --> G
+    G --> N[Apply comparison-mode neutralization context]
+    N --> D[Accumulate alternative minus baseline delta]
+    D --> L
+    D --> O[Trajectory, rejoin, delta and warnings]
+    O --> V[Repeat with lower/higher assumptions]
+```
+
+The transparent model estimates base pace as the median of up to five recent laps after
+removing the configured tyre-age effect and normalizing the lap relative to the branch
+with the fuel-gain assumption. For each future lap, the simplified pace relationship is:
+
+```text
+predicted lap = base pace
+              + compound/tyre-age delta
+              - fuel gain since branch
+              + pit and warm-up loss when stopping
+              + estimated traffic loss
+              + observed neutralization slowing in historical mode
+```
+
+Rejoin estimates hold opponents at their branch-point numeric gaps. They are useful for
+showing the likely traffic band after a stop; they are not a dynamic overtaking model or
+predicted classification.
+
+## Comparison modes
+
+| Mode | Baseline | Future information | Intended question |
+| --- | --- | --- | --- |
+| Historical | Recorded future lap times | Uses recorded laps and neutralizations | How would this call compare in the race that occurred? |
+| Decision-time (`forecast`) | User-defined second stop plan | Uses pre-branch pace and holds branch conditions constant | Which of these two plans looks better using information available now? |
+
+Historical mode replaces the driver's next recorded stop and preserves later recorded
+stops. It requires complete recorded laps through the horizon. Decision-time mode
+requires an explicit baseline pit lap and compound and rejects model data that would
+not have existed at the branch.
+
+## Sensitivity output
+
+The central run uses the submitted assumptions. Two additional runs multiply
+degradation, pit-lane loss and traffic penalty by `(1 - uncertainty)` and
+`(1 + uncertainty)`. The minimum and maximum deltas become the displayed range.
+
+This range answers “How much does the result move under these chosen variations?” It
+is not a probability distribution or statistical confidence interval.
+
+## Optional pace model
+
+The optional ML module is a small versioned ridge regression over pace deltas. It is a
+guarded replacement for the compound/age curve, not a separate race simulator.
+
+| Feature | Encoding |
+| --- | --- |
+| Intercept | `1` |
+| Tyre age | Linear term |
+| Tyre age squared | `age² / 100` |
+| Soft compound | Indicator |
+| Hard compound | Indicator; Medium is the reference |
+
+Clean laps must use a dry compound, have tyre age, avoid pit-out and neutralized laps,
+and fall between 40 and 200 seconds. Laps more than five seconds from that driver's
+session median are removed. The target is lap time minus the driver/session median,
+which controls much of the driver and circuit base pace.
+
+Sessions are sorted chronologically. All but the newest train the model; the newest is
+the holdout. Every session needs at least 30 clean laps. Version 2 models become
+selectable only if holdout MAE is at least 5% below a zero pace-delta baseline.
+
+```mermaid
+flowchart LR
+    S[Selected races] --> C[Clean and center laps]
+    C --> SPLIT[Chronological session split]
+    SPLIT --> TRAIN[Ridge fit on earlier races]
+    SPLIT --> TEST[Evaluate newest holdout]
+    TRAIN --> TEST
+    TEST --> PASS{At least 5% better<br/>than baseline?}
+    PASS -- yes --> USE[Eligible in Strategy]
+    PASS -- no --> KEEP[Stored for audit,<br/>not selectable]
+```
+
+Even an accepted model falls back to the transparent tyre model when:
+
+- the simulated session was used for its training or holdout;
+- decision-time use would expose data at or after the branch;
+- the requested compound was not observed in training; or
+- tyre age is outside the trained range.
+
+## Interpretation limits
+
+- Wet and intermediate pace is not calibrated.
+- Fuel, track evolution and traffic remain confounders in the learned model.
+- Opponent stops and pace do not react to the alternative.
+- Overtaking, penalties, red flags and detailed regulation edge cases are simplified.
+- Recorded-stop validation measures reproduction of observed elapsed time, not causal
+  counterfactual truth.
+- Circuit-specific calibration and broader held-out testing would be required before
+  treating estimated gains as operational recommendations.
+
+See [strategy validation](strategy-validation.md) for measured results and the exact
+report command.

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="256" viewBox="0 0 1280 256" role="img" aria-labelledby="title description">
+  <title id="title">Pitwall</title>
+  <desc id="description">Pitwall Formula 1 race analysis and strategy banner</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#090d13"/><stop offset="1" stop-color="#121923"/></linearGradient>
+    <linearGradient id="trace" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#e10600" stop-opacity="0"/><stop offset="0.42" stop-color="#e10600" stop-opacity="0.75"/><stop offset="1" stop-color="#ff4b45" stop-opacity="0"/></linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#95a0b2" stroke-opacity="0.055"/></pattern>
+  </defs>
+  <rect width="1280" height="256" rx="20" fill="url(#background)"/>
+  <rect width="1280" height="256" rx="20" fill="url(#grid)"/>
+  <path d="M0 228H1280" stroke="#e10600" stroke-width="3"/>
+  <g transform="translate(72 70)" fill="none" stroke="#e10600" stroke-width="10" stroke-linecap="square"><path d="M0 68L68 0"/><path d="M42 68L110 0"/></g>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="220" y="126" fill="#f4f6fa" font-size="72" font-weight="900" font-style="italic" letter-spacing="-4">PITWALL</text>
+    <text x="526" y="126" fill="#e10600" font-size="72" font-weight="900" font-style="italic">/</text>
+    <text x="225" y="164" fill="#98a2b3" font-size="14" font-weight="700" letter-spacing="5">RACE REPLAY  ·  ANALYSIS  ·  STRATEGY</text>
+  </g>
+  <g transform="translate(815 28)">
+    <path d="M35 164C9 144 11 103 40 88C63 76 69 55 61 33C53 11 80 0 98 16C117 33 98 58 112 75C129 95 159 76 178 91C199 108 181 135 199 151C221 171 262 149 278 124C293 100 277 77 292 59C307 40 341 50 346 76C351 103 327 121 332 146C337 174 374 181 394 161" fill="none" stroke="#566173" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M35 164C9 144 11 103 40 88C63 76 69 55 61 33C53 11 80 0 98 16C117 33 98 58 112 75C129 95 159 76 178 91C199 108 181 135 199 151C221 171 262 149 278 124C293 100 277 77 292 59C307 40 341 50 346 76C351 103 327 121 332 146C337 174 374 181 394 161" fill="none" stroke="#aeb7c5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="199" cy="151" r="8" fill="#e10600" filter="url(#glow)"/><circle cx="112" cy="75" r="5" fill="#64d5b3"/><circle cx="332" cy="146" r="5" fill="#f4cf47"/>
+  </g>
+  <path d="M650 205H760L782 179L803 217L826 194H930" fill="none" stroke="url(#trace)" stroke-width="2"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#7f8999" font-size="10" font-weight="700" letter-spacing="2"><text x="72" y="220">INDEPENDENT FORMULA 1 RACE ENGINEERING</text><text x="1060" y="220">EST. 2026</text></g>
+</svg>
