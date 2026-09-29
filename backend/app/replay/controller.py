@@ -242,24 +242,26 @@ class ReplayRegistry:
         self._controllers: dict[str, ReplayController] = {}
         self._datasets: OrderedDict[int, tuple] = OrderedDict()
         self._lock = asyncio.Lock()
+        self._dataset_lock = asyncio.Lock()
 
-    async def _dataset(self, session_key: int) -> tuple:
-        cached = self._datasets.get(session_key)
-        if cached is not None:
-            self._datasets.move_to_end(session_key)
-            return cached
+    async def dataset(self, session_key: int) -> tuple:
+        async with self._dataset_lock:
+            cached = self._datasets.get(session_key)
+            if cached is not None:
+                self._datasets.move_to_end(session_key)
+                return cached
 
-        async with AsyncSessionLocal() as db:
-            context = await SessionRepository(db).get_replay_context(session_key)
-            events = await EventRepository(db).get_for_session(session_key)
-        if not events:
-            raise ValueError(f"No replay events for session {session_key}")
+            async with AsyncSessionLocal() as db:
+                context = await SessionRepository(db).get_replay_context(session_key)
+                events = await EventRepository(db).get_for_session(session_key)
+            if not events:
+                raise ValueError(f"No replay events for session {session_key}")
 
-        dataset = (context, events, _dataset_version(context, events))
-        self._datasets[session_key] = dataset
-        while len(self._datasets) > self.MAX_CACHED_DATASETS:
-            self._datasets.popitem(last=False)
-        return dataset
+            dataset = (context, events, _dataset_version(context, events))
+            self._datasets[session_key] = dataset
+            while len(self._datasets) > self.MAX_CACHED_DATASETS:
+                self._datasets.popitem(last=False)
+            return dataset
 
     async def get(self, session_key: int, viewer_id: str | None = None) -> ReplayController:
         key = f"{viewer_id or 'legacy'}:{session_key}"
@@ -267,7 +269,7 @@ class ReplayRegistry:
             if key in self._controllers:
                 self._controllers[key].last_access = time.monotonic()
                 return self._controllers[key]
-            context, events, dataset_version = await self._dataset(session_key)
+            context, events, dataset_version = await self.dataset(session_key)
             controller = ReplayController(
                 session_key,
                 ReplayEngine(context, events),

@@ -8,7 +8,7 @@ from test_engine import START, make_context, make_events
 
 from app.domain.enums import EventType
 from app.domain.events import RaceEvent
-from app.replay.controller import ReplayController, _dataset_version
+from app.replay.controller import ReplayController, ReplayRegistry, _dataset_version
 from app.replay.engine import ReplayEngine, state_fingerprint
 from app.schemas.strategy import StrategyRequest
 from app.services.analysis import analyse
@@ -76,6 +76,36 @@ def test_replay_dataset_version_is_stable_without_combining_serialized_events():
     changed = deepcopy(events)
     changed[-1].payload["changed"] = True
     assert _dataset_version(context, events) != _dataset_version(context, changed)
+
+
+async def test_replay_registry_reuses_one_dataset_for_multiple_viewers(monkeypatch):
+    from app.replay import controller as module
+
+    context = make_context()
+    events = make_events()
+    context_loader = AsyncMock(return_value=context)
+    event_loader = AsyncMock(return_value=events)
+    monkeypatch.setattr(
+        module.SessionRepository,
+        "get_replay_context",
+        context_loader,
+    )
+    monkeypatch.setattr(
+        module.EventRepository,
+        "get_for_session",
+        event_loader,
+    )
+    monkeypatch.setattr(module.workspace_repository, "get", AsyncMock(return_value=None))
+    monkeypatch.setattr(module.workspace_repository, "put", AsyncMock())
+
+    registry = ReplayRegistry()
+    first = await registry.get(1, "first")
+    second = await registry.get(1, "second")
+
+    assert first.engine.events[0] is second.engine.events[0]
+    assert context_loader.await_count == 1
+    assert event_loader.await_count == 1
+    await registry.close()
 
 
 def test_simulation_is_deterministic_and_does_not_mutate_history():

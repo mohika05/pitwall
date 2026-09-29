@@ -4,9 +4,9 @@ from statistics import median
 from app.domain.enums import EventType, SafetyCarState
 from app.domain.race_state import apply_event, build_initial_state
 from app.persistence.database import AsyncSessionLocal
-from app.persistence.repositories.event_repository import EventRepository
 from app.persistence.repositories.session_repository import SessionRepository
 from app.persistence.repositories.workspace_repository import workspace_repository
+from app.replay.controller import replay_registry
 from app.services.telemetry import telemetry_service
 
 
@@ -98,10 +98,9 @@ def analyse(context, events, enrichment=None, telemetry_drivers=None):
 
 
 async def load_history(session_key: int):
+    context, events, _ = await replay_registry.dataset(session_key)
     async with AsyncSessionLocal() as db:
         repository = SessionRepository(db)
-        context = await repository.get_replay_context(session_key)
-        events = await EventRepository(db).get_for_session(session_key)
         official = await repository.get_official_result(session_key)
     return context, events, official
 
