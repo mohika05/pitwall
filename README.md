@@ -134,11 +134,13 @@ See [architecture](docs/architecture.md), [cloud ingestion](docs/cloud-ingestion
 ## Public deployment
 
 The root `Dockerfile` builds the React app and FastAPI service into one same-origin
-image. `render.yaml` is a deployable Render blueprint; supply PostgreSQL, Redis and
-S3-compatible storage credentials in the Render dashboard. The backend binds Render's
+image. `render.yaml` is a zero-cost Render blueprint that creates the free web service
+and disposable free Key Value cache; supply the existing Neon PostgreSQL and
+Cloudflare R2 credentials in the Render dashboard. The backend binds Render's
 `PORT`, applies migrations on startup, serves REST at `/api`, WebSockets at `/ws`, and
 the frontend at `/`. Keep one backend worker because replay controllers and the
-preparation queue are process-local.
+preparation queue are process-local. Free instances sleep when idle, so the first
+request after a quiet period can take about a minute.
 
 Build and exercise that combined image locally with:
 

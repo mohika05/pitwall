@@ -1,105 +1,120 @@
-# Public deployment
+# Free public deployment
 
-Pitwall ships as one production image. FastAPI serves the compiled React assets,
-REST endpoints under `/api`, and replay WebSockets under `/ws`. This avoids separate
-frontend CORS and WebSocket configuration.
+Pitwall deploys as one Docker web service: FastAPI serves the compiled React app,
+REST endpoints under `/api`, and replay WebSockets under `/ws`. Keeping everything on
+one origin avoids a second frontend service, CORS configuration, and separate
+WebSocket routing.
 
-## Services
+## Zero-cost stack
 
-- One Render web service using the root `Dockerfile` and `render.yaml`
-- A durable PostgreSQL database
-- A Redis-compatible service
-- A private S3-compatible bucket, preferably Cloudflare R2
+| Part | Service | Free-plan role |
+| --- | --- | --- |
+| Web app | Render free web service | Runs the combined React/FastAPI image |
+| Replay state | Render free Key Value | Disposable Redis-compatible state |
+| Metadata | Existing Neon free project | Durable PostgreSQL metadata |
+| Replay and telemetry | Existing Cloudflare R2 Standard bucket | Durable objects below the 10 GB-month allowance |
+| Future ingestion | GitHub Actions | Checks completed sessions and publishes missing data |
 
-Keep the web service at one instance. Replay controllers and the preparation worker
-currently live in one process.
+The root `render.yaml` creates the Render web service and Key Value instance together.
+Do not add a Render Postgres database: free Render databases expire after 30 days,
+whereas the existing Neon database is already populated and persistent.
 
-## Object storage
+Render's free web service has 512 MB RAM and sleeps after 15 minutes without HTTP or
+WebSocket traffic. Its first request after sleeping can take about a minute. The free
+Key Value instance is in-memory and may be reset; that is acceptable because replay
+controllers are disposable and historical data remains in Neon and R2.
 
-Create a private bucket and an API credential with object read/write access. Set the
-following Render environment variables:
+## Before deployment
 
-```text
-STORAGE_BACKEND=s3
-S3_BUCKET=<bucket name>
-S3_PREFIX=pitwall
-S3_ENDPOINT_URL=<S3-compatible endpoint>
-S3_REGION=auto
-S3_ACCESS_KEY_ID=<credential id>
-S3_SECRET_ACCESS_KEY=<credential secret>
-STORAGE_CACHE_MAX_BYTES=1073741824
-FASTF1_CLEANUP_AFTER_PREPARE=true
-FASTF1_USE_REQUESTS_CACHE=false
-PERSIST_HISTORICAL_EVENTS_IN_DATABASE=false
-PITWALL_ADMIN_TOKEN=<random administrator token>
-```
+1. Push the reviewed deployment changes to GitHub.
+2. Rotate any R2 key that has been displayed publicly and update the GitHub Actions
+   secrets with the replacement.
+3. In Neon, copy the pooled connection string. The application automatically converts
+   `postgresql://` to the async SQLAlchemy scheme and converts `sslmode` to `ssl`.
+4. In Cloudflare R2, keep the bucket on **Standard** storage. The free allowance does
+   not apply to Infrequent Access storage.
 
-Objects are uploaded with a SHA-256 metadata value and verified with a `HEAD`
-request before the session manifest is published. The manifest is the readiness
-marker. Hosted instances download requested Parquet files into a one-gigabyte LRU
-cache, so an ephemeral filesystem is sufficient.
+The scheduled ingestion workflow runs `cloud_preflight` before starting. It refuses
+to ingest when stored objects already exceed 9.5 GB, leaving headroom below R2's
+10 GB-month allowance. Review R2 usage periodically because provider usage accounting,
+operations, and unexpected traffic remain external limits.
 
-Upload the existing prepared sessions from a trusted local shell after setting the
-same S3 variables:
+## Create the Render Blueprint
 
-```sh
-cd backend
-../.venv/bin/python -m scripts.storage_admin
-```
+1. Sign in to Render without adding a payment method. With no payment method, Render
+   suspends free services when included usage is exhausted instead of charging an
+   overage.
+2. Select **New → Blueprint** and connect the Pitwall GitHub repository.
+3. Render reads `render.yaml`. Confirm that both resources use the **Free** plan:
+   `pitwall` and `pitwall-cache`.
+4. Enter only these prompted secrets:
 
-## Database and Redis
+   ```text
+   DATABASE_URL=<Neon pooled PostgreSQL URL>
+   S3_BUCKET=<R2 bucket name>
+   S3_ENDPOINT_URL=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+   S3_ACCESS_KEY_ID=<R2 access key ID>
+   S3_SECRET_ACCESS_KEY=<R2 secret access key>
+   ```
 
-Set `DATABASE_URL` to an asyncpg URL. If the provider gives a URL beginning with
-`postgresql://`, change only the scheme to `postgresql+asyncpg://`. Set `REDIS_URL`
-to the provider's Redis connection URL. The container applies Alembic migrations on
-every start.
+   `REDIS_URL` is connected automatically to `pitwall-cache`, and Render generates the
+   production-only `PITWALL_ADMIN_TOKEN`. Never paste secrets into `render.yaml`.
 
-The existing local database can be copied with `pg_dump` and `pg_restore`, or the
-sessions can be prepared again against the hosted database. Never commit a database
-URL, access key, token, or dump file.
+5. Apply the Blueprint. The container builds the frontend, installs the backend,
+   applies Alembic migrations, and starts one Uvicorn worker on Render's assigned port.
 
-## Historical ingestion
+The deployment deliberately uses a 256 MiB local object cache. Render's filesystem is
+ephemeral, so cache files can disappear safely during sleep, restart, or deployment.
+Canonical data always remains in R2.
 
-FastF1 preparation can exceed the memory available to a free web instance. Run the
-backend locally with the hosted PostgreSQL, Redis, and S3 variables, then process one
-season at a time:
+## Verify the public deployment
 
-```sh
-cd backend
-../.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
-../.venv/bin/python -m scripts.prepare_catalogue --years 2023 --stop-on-error
-../.venv/bin/python -m scripts.prepare_catalogue --years 2024 --stop-on-error
-../.venv/bin/python -m scripts.prepare_catalogue --years 2025 --stop-on-error
-../.venv/bin/python -m scripts.prepare_catalogue --years 2026 --stop-on-error
-```
-
-Use separate terminals for the server and batch command. Completed sessions are
-skipped on reruns. Each session is downloaded, normalized, uploaded and verified
-before its FastF1 cache is removed.
-
-The current 11-session sample occupies 174.7 MiB in canonical objects. At that
-measured rate, 480 sessions would occupy approximately 7.45 GiB. Historical events
-are stored once as compressed objects instead of being duplicated in PostgreSQL.
-
-## Verification
-
-After deployment, check:
+Replace `<APP>` with the hostname Render assigns:
 
 ```text
-GET /health
-GET /health/db
-GET /health/redis
-GET /api/catalog/2025
-GET /api/sessions
+https://<APP>.onrender.com/health
+https://<APP>.onrender.com/health/db
+https://<APP>.onrender.com/health/redis
+https://<APP>.onrender.com/api/catalog/2025
+https://<APP>.onrender.com/api/sessions
 ```
 
-Open one prepared race, run a Strategy scenario, compare laps in Analyze, play and
-seek the replay, select multiple drivers, load the track map, and verify the browser
-uses a secure `wss://` replay connection.
+Then open the root URL and verify:
 
-Render's Blueprint format, Docker deployment, and health checks are documented in
-the [Render Blueprint reference](https://render.com/docs/blueprint-spec),
-[Docker guide](https://render.com/docs/docker), and
-[health-check guide](https://render.com/docs/health-checks). Cloudflare documents
-the current R2 allowance and usage pricing in its
-[R2 pricing guide](https://developers.cloudflare.com/r2/pricing/).
+1. A prepared race loads from R2.
+2. Replay play, pause, seek, and driver selection work.
+3. The circuit map and telemetry load.
+4. Analyze can compare two laps.
+5. Strategy can save a dry-race scenario.
+6. A direct browser refresh still serves the React app.
+7. The replay connection uses `wss://`.
+
+## Free-tier limits
+
+- Render provides 750 free instance hours per workspace each month. Idle time does not
+  consume hours after the service spins down.
+- Render can suspend a free service for unusually high outbound traffic, including
+  large repeated R2 downloads. The 256 MiB local cache reduces repeated reads while an
+  instance remains awake.
+- Render free Key Value data is not persistent. Users may lose active replay position
+  after a restart and can simply reopen the session.
+- R2 Standard currently includes 10 GB-month storage, 1 million Class A operations,
+  10 million Class B operations, and free egress each month.
+- This configuration is suitable for a résumé demonstration and light portfolio use,
+  not an uptime-sensitive production service.
+
+Provider references: [Render free services](https://render.com/docs/free),
+[Render Blueprint reference](https://render.com/docs/blueprint-spec), and
+[Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/).
+
+## Local production-image check
+
+The same image can be built and exercised locally:
+
+```sh
+docker compose --profile deployment build production
+docker compose --profile deployment up production
+```
+
+Open `http://127.0.0.1:8081`. The local Compose profile uses local storage and local
+PostgreSQL/Redis; production uses the Render/Neon/R2 environment variables above.

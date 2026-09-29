@@ -1,4 +1,11 @@
 services:
+  - type: keyvalue
+    name: pitwall-cache
+    plan: free
+    region: singapore
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+
   - type: web
     name: pitwall
     runtime: docker
@@ -13,9 +20,12 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
-        sync: false
+        fromService:
+          type: keyvalue
+          name: pitwall-cache
+          property: connectionString
       - key: PITWALL_ADMIN_TOKEN
-        sync: false
+        generateValue: true
       - key: STORAGE_BACKEND
         value: s3
       - key: S3_BUCKET
@@ -31,7 +41,7 @@ services:
       - key: S3_PREFIX
         value: pitwall
       - key: STORAGE_CACHE_MAX_BYTES
-        value: "1073741824"
+        value: "268435456"
       - key: FASTF1_CLEANUP_AFTER_PREPARE
         value: "true"
       - key: FASTF1_USE_REQUESTS_CACHE

@@ -67,6 +67,8 @@ jobs:
           done
           cat /tmp/pitwall-api.log
           exit 1
+      - name: Enforce free cloud-storage budget
+        run: python -m scripts.cloud_preflight --max-storage-gb 9.5
       - name: Ingest newly completed sessions
         run: |
           year="${INGESTION_YEAR:-$(date -u +%Y)}"
