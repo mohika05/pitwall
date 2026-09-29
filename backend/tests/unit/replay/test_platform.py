@@ -8,7 +8,7 @@ from test_engine import START, make_context, make_events
 
 from app.domain.enums import EventType
 from app.domain.events import RaceEvent
-from app.replay.controller import ReplayController
+from app.replay.controller import ReplayController, _dataset_version
 from app.replay.engine import ReplayEngine, state_fingerprint
 from app.schemas.strategy import StrategyRequest
 from app.services.analysis import analyse
@@ -67,6 +67,15 @@ def test_analysis_distinguishes_clean_laps_and_missing_telemetry():
     assert not any(lap["neutralized"] for lap in result["laps"])
     assert result["drivers"][0]["median_pace"] is not None
     assert result["quality"]["total_drivers"] == 1
+
+
+def test_replay_dataset_version_is_stable_without_combining_serialized_events():
+    context = make_context()
+    events = make_events()
+    assert _dataset_version(context, events) == _dataset_version(context, list(events))
+    changed = deepcopy(events)
+    changed[-1].payload["changed"] = True
+    assert _dataset_version(context, events) != _dataset_version(context, changed)
 
 
 def test_simulation_is_deterministic_and_does_not_mutate_history():

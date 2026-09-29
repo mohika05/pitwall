@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import time
+from collections import OrderedDict
 from datetime import datetime
 
 from redis.exceptions import RedisError
@@ -39,6 +40,7 @@ class ReplayController:
         session_key: int,
         engine: ReplayEngine,
         workspace_id: str | None = None,
+        dataset_version: str | None = None,
     ) -> None:
         self.session_key = session_key
 
@@ -49,12 +51,10 @@ class ReplayController:
         self.channel = workspace_id or session_key
         self._last_checkpoint = 0.0
         self._broadcast_lock = asyncio.Lock()
-        self.dataset_version = hashlib.sha256(
-            (
-                json.dumps(engine.context.model_dump(mode="json"), sort_keys=True)
-                + "".join(event.model_dump_json() for event in engine.events)
-            ).encode()
-        ).hexdigest()
+        self.dataset_version = dataset_version or _dataset_version(
+            engine.context,
+            engine.events,
+        )
 
         self.cache = RaceStateCache(workspace_id)
 
@@ -236,9 +236,30 @@ class ReplayController:
 
 
 class ReplayRegistry:
+    MAX_CACHED_DATASETS = 2
+
     def __init__(self) -> None:
         self._controllers: dict[str, ReplayController] = {}
+        self._datasets: OrderedDict[int, tuple] = OrderedDict()
         self._lock = asyncio.Lock()
+
+    async def _dataset(self, session_key: int) -> tuple:
+        cached = self._datasets.get(session_key)
+        if cached is not None:
+            self._datasets.move_to_end(session_key)
+            return cached
+
+        async with AsyncSessionLocal() as db:
+            context = await SessionRepository(db).get_replay_context(session_key)
+            events = await EventRepository(db).get_for_session(session_key)
+        if not events:
+            raise ValueError(f"No replay events for session {session_key}")
+
+        dataset = (context, events, _dataset_version(context, events))
+        self._datasets[session_key] = dataset
+        while len(self._datasets) > self.MAX_CACHED_DATASETS:
+            self._datasets.popitem(last=False)
+        return dataset
 
     async def get(self, session_key: int, viewer_id: str | None = None) -> ReplayController:
         key = f"{viewer_id or 'legacy'}:{session_key}"
@@ -246,13 +267,12 @@ class ReplayRegistry:
             if key in self._controllers:
                 self._controllers[key].last_access = time.monotonic()
                 return self._controllers[key]
-            async with AsyncSessionLocal() as db:
-                context = await SessionRepository(db).get_replay_context(session_key)
-                events = await EventRepository(db).get_for_session(session_key)
-            if not events:
-                raise ValueError(f"No replay events for session {session_key}")
+            context, events, dataset_version = await self._dataset(session_key)
             controller = ReplayController(
-                session_key, ReplayEngine(context, events), key if viewer_id else None
+                session_key,
+                ReplayEngine(context, events),
+                key if viewer_id else None,
+                dataset_version,
             )
             if viewer_id:
                 saved = await workspace_repository.get("replay", key)
@@ -278,6 +298,18 @@ class ReplayRegistry:
         for controller in list(self._controllers.values()):
             await controller.pause()
         self._controllers.clear()
+        self._datasets.clear()
+
+
+def _dataset_version(context, events) -> str:
+    """Hash a replay dataset without constructing a second full serialized copy."""
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(context.model_dump(mode="json"), sort_keys=True).encode()
+    )
+    for event in events:
+        digest.update(event.model_dump_json().encode())
+    return digest.hexdigest()
 
 
 replay_registry = ReplayRegistry()

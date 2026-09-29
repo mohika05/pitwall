@@ -126,7 +126,7 @@ def _load_car_frame(path_string: str) -> pd.DataFrame:
     return _load_frame_uncached(path_string)
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=20)
 def _load_position_frame(path_string: str) -> pd.DataFrame:
     # Position channels are much smaller and are reused for the circuit map.
     return _load_frame_uncached(path_string)
