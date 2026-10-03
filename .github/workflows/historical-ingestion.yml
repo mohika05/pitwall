@@ -77,10 +77,14 @@ jobs:
             --recent-days 30 \
             --completion-delay-minutes 120 \
             --admin-token "$PITWALL_ADMIN_TOKEN" \
+            --catalog-retry-attempts 4 \
             --retry-attempts 2
       - name: Verify cloud state
         if: always()
         run: python -m scripts.cloud_preflight
+      - name: Show backend log on failure
+        if: failure()
+        run: cat /tmp/pitwall-api.log
       - name: Upload backend log on failure
         if: failure()
         uses: actions/upload-artifact@v4

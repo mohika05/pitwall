@@ -11,6 +11,8 @@ import httpx
 from app.storage.object_store import manifest_key, object_store
 
 TERMINAL = {"ready", "partial", "failed", "interrupted"}
+TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+CATALOG_RETRY_DELAYS_SECONDS = (10, 30, 60, 120)
 
 
 async def has_complete_manifest(session_key: int) -> bool:
@@ -53,6 +55,50 @@ async def wait_for_job(client: httpx.AsyncClient, session_key: int) -> dict:
         await asyncio.sleep(5)
 
 
+async def get_catalog_response(
+    client: httpx.AsyncClient,
+    path: str,
+    retry_attempts: int,
+) -> httpx.Response:
+    """Fetch a catalogue endpoint, retrying only temporary API failures."""
+    for attempt in range(retry_attempts + 1):
+        try:
+            response = await client.get(path)
+            if response.status_code not in TRANSIENT_STATUS_CODES:
+                response.raise_for_status()
+                return response
+            error: Exception = httpx.HTTPStatusError(
+                f"Temporary catalogue response {response.status_code}",
+                request=response.request,
+                response=response,
+            )
+        except httpx.RequestError as request_error:
+            error = request_error
+
+        if attempt >= retry_attempts:
+            raise error
+
+        retry_after = None
+        if isinstance(error, httpx.HTTPStatusError):
+            retry_after_header = error.response.headers.get("Retry-After")
+            if retry_after_header:
+                try:
+                    retry_after = float(retry_after_header)
+                except ValueError:
+                    pass
+        delay = retry_after or CATALOG_RETRY_DELAYS_SECONDS[
+            min(attempt, len(CATALOG_RETRY_DELAYS_SECONDS) - 1)
+        ]
+        print(
+            f"Catalogue request {path} failed ({error}); retrying in "
+            f"{delay:g}s ({attempt + 1}/{retry_attempts})",
+            flush=True,
+        )
+        await asyncio.sleep(delay)
+
+    raise RuntimeError("Unreachable catalogue retry state")
+
+
 async def run(args: argparse.Namespace) -> int:
     failures = 0
     processed = 0
@@ -64,12 +110,14 @@ async def run(args: argparse.Namespace) -> int:
     ) as client:
         years = args.years
         if not years:
-            response = await client.get("/catalog/years")
-            response.raise_for_status()
+            response = await get_catalog_response(
+                client, "/catalog/years", args.catalog_retry_attempts
+            )
             years = response.json()["years"]
         for year in years:
-            response = await client.get(f"/catalog/{year}")
-            response.raise_for_status()
+            response = await get_catalog_response(
+                client, f"/catalog/{year}", args.catalog_retry_attempts
+            )
             now = datetime.now(UTC)
             sessions = [
                 session
@@ -141,6 +189,12 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--stop-on-error", action="store_true")
     parser.add_argument("--retry-attempts", type=int, default=1)
+    parser.add_argument(
+        "--catalog-retry-attempts",
+        type=int,
+        default=4,
+        help="Retry temporary catalogue API failures this many times",
+    )
     parser.add_argument("--min-free-gb", type=float, default=3.0)
     parser.add_argument("--max-sessions", type=int)
     parser.add_argument("--session-keys", nargs="*", type=int, default=[])
