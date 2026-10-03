@@ -95,8 +95,8 @@ explains that those races are outside the calibrated scope.
 - Publish a verified manifest only after every canonical object is written.
 - Delete disposable FastF1 cache data after each preparation attempt.
 - Resume a season-level ingestion run while skipping completed manifests.
-- Run weekly post-race ingestion through GitHub Actions, publishing only sessions
-  that do not already have a complete cloud manifest.
+- Detect newly completed sessions from their published OpenF1 end times and run
+  cloud ingestion only inside the post-session availability window.
 - Observe health endpoints, structured request logs and Prometheus-style counters.
 
 Preparation routes require an administrator token. Public visitors can use prepared
@@ -283,12 +283,12 @@ cd backend
 ../.venv/bin/python -m scripts.cloud_preflight
 ```
 
-The `.github/workflows/historical-ingestion.yml` workflow runs every Monday at
-06:17 UTC (11:47 IST), after the race weekend. It inspects the previous 30 days and
-ingests only sessions without complete manifests, so a Monday with no new race is a
-quick no-op. Manual dispatch remains available for delayed races and recovery. The
-workflow requires the database, object-storage and administrator-token secrets
-described in [cloud ingestion setup](docs/cloud-ingestion.md).
+The `.github/workflows/historical-ingestion.yml` workflow performs lightweight
+OpenF1 checks every 30 minutes on Friday, Saturday and Sunday. The ingestion job runs
+only when a session ended 45–120 minutes earlier, then skips every object that already
+has a complete manifest. Manual dispatch remains available for delayed sessions and
+recovery. The workflow requires the database, object-storage and administrator-token
+secrets described in [cloud ingestion setup](docs/cloud-ingestion.md).
 
 ## Testing
 
@@ -341,7 +341,7 @@ The public deployment uses a zero-cost stack:
 | Render free Key Value   | Disposable Redis-compatible replay cache           |
 | Neon free PostgreSQL    | Durable searchable metadata and workspace records  |
 | Cloudflare R2           | Compressed events, manifests and Parquet telemetry |
-| GitHub Actions          | CI and weekly post-race ingestion                   |
+| GitHub Actions          | CI and event-aware post-session ingestion           |
 
 `render.yaml` defines the Render web service and cache. The production process applies
 Alembic migrations, binds Render's assigned port and runs one Uvicorn worker. Keep one

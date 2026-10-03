@@ -1,9 +1,9 @@
-name: Post-race ingestion
+name: Post-session ingestion
 
 on:
   schedule:
-    # Monday 06:17 UTC / 11:47 IST, after the race weekend has ended.
-    - cron: "17 6 * * 1"
+    # Poll only on race-weekend days. The detect job exits unless a session just ended.
+    - cron: "7,37 * * * 5,6,0"
   workflow_dispatch:
     inputs:
       year:
@@ -12,11 +12,54 @@ on:
         type: string
 
 concurrency:
-  group: pitwall-post-race-ingestion
+  group: pitwall-post-session-ingestion
   cancel-in-progress: false
 
 jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      should_ingest: ${{ steps.session.outputs.should_ingest }}
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      INGESTION_YEAR: ${{ inputs.year || '' }}
+    steps:
+      - name: Check for a newly completed session
+        id: session
+        shell: bash
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_ingest=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run requested; continuing to ingestion."
+            exit 0
+          fi
+
+          year="${INGESTION_YEAR:-$(date -u +%Y)}"
+          if ! sessions="$(curl --fail --silent --show-error \
+            "https://api.openf1.org/v1/sessions?year=$year")"; then
+            echo "should_ingest=false" >> "$GITHUB_OUTPUT"
+            echo "OpenF1 catalogue is unavailable or still in its live-session window."
+            exit 0
+          fi
+
+          now="$(date -u +%s)"
+          while IFS=$'\t' read -r session_key date_end; do
+            [ -n "$session_key" ] && [ -n "$date_end" ] || continue
+            ended="$(date -u -d "$date_end" +%s 2>/dev/null)" || continue
+            age_seconds="$((now - ended))"
+            if [ "$age_seconds" -ge 2700 ] && [ "$age_seconds" -le 7200 ]; then
+              echo "should_ingest=true" >> "$GITHUB_OUTPUT"
+              echo "Session $session_key ended within the ingestion window."
+              exit 0
+            fi
+          done < <(printf '%s' "$sessions" | jq -r '.[] | [.session_key, .date_end] | @tsv')
+
+          echo "should_ingest=false" >> "$GITHUB_OUTPUT"
+          echo "No session ended 45 to 120 minutes ago; no ingestion needed."
+
   ingest:
+    needs: detect
+    if: needs.detect.outputs.should_ingest == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 330
     services:

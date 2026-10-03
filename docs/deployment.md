@@ -13,7 +13,7 @@ flowchart LR
     R <--> K[(Render Key Value<br/>disposable cache)]
     R <--> N[(Neon PostgreSQL<br/>durable metadata)]
     R <--> O[(Cloudflare R2<br/>durable events and Parquet)]
-    G[GitHub Actions<br/>weekly post-race ingestion] --> N
+    G[GitHub Actions<br/>event-aware post-session ingestion] --> N
     G --> O
 ```
 
@@ -25,7 +25,7 @@ flowchart LR
 | Replay state | Render free Key Value | Disposable Redis-compatible state |
 | Metadata | Existing Neon free project | Durable PostgreSQL metadata |
 | Replay and telemetry | Existing Cloudflare R2 Standard bucket | Durable objects below the 10 GB-month allowance |
-| Post-race ingestion | GitHub Actions | Checks each Monday and publishes missing sessions |
+| Post-session ingestion | GitHub Actions | Detects completed sessions and publishes missing data |
 
 The root `render.yaml` creates the Render web service and Key Value instance together.
 Do not add a Render Postgres database: free Render databases expire after 30 days,
@@ -46,10 +46,11 @@ controllers are disposable and historical data remains in Neon and R2.
 4. In Cloudflare R2, keep the bucket on **Standard** storage. The free allowance does
    not apply to Infrequent Access storage.
 
-The weekly post-race workflow runs each Monday at 06:17 UTC and executes
-`cloud_preflight` before starting. It refuses to ingest when stored objects already
-exceed 9.5 GB, leaving headroom below R2's 10 GB-month allowance. Review R2 usage
-periodically because provider usage accounting, operations, and unexpected traffic
+The post-session workflow checks OpenF1 end times every 30 minutes on race-weekend
+days and starts its ingestion job only within the configured completion window. It
+executes `cloud_preflight` before ingestion and refuses to continue when stored objects
+already exceed 9.5 GB, leaving headroom below R2's 10 GB-month allowance. Review R2
+usage periodically because provider accounting, operations, and unexpected traffic
 remain external limits.
 
 ## Create the Render Blueprint

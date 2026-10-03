@@ -172,17 +172,19 @@ partial jobs have been reviewed.
 | `failed` | Session did not reach a usable prepared state | Fix provider/storage issue and retry |
 | `interrupted` | Process ended while the job was active | Rerun; startup will not resume it silently |
 
-## 7. Automatic post-race ingestion
+## 7. Automatic post-session ingestion
 
-The `Post-race ingestion` GitHub Actions workflow runs every Monday at 06:17 UTC
-(11:47 IST) and can also be started manually. Monday execution normally avoids
-OpenF1's live-session access window and allows the completed weekend to be processed
-in one batch.
-It inspects the previous 30 days, checks R2 manifests directly, and prepares only
-sessions without a complete manifest. On a week without a new race, every recent
-session is already complete and the run performs no ingestion. This direct cloud
-check prevents a fresh Actions runner from redownloading the historical archive when
-its Redis instance starts empty.
+The `Post-session ingestion` GitHub Actions workflow performs a lightweight OpenF1
+calendar check every 30 minutes on Friday, Saturday and Sunday. It reads the published
+`date_end` values and starts the ingestion job only when a session ended 45–120
+minutes earlier. During OpenF1's live-session restriction the check exits successfully
+and tries again at the next interval. The full runner therefore starts around an hour
+after a completed session instead of running continuously throughout the week.
+
+Once started, it inspects the previous 30 days, checks R2 manifests directly, and
+prepares only sessions without a complete manifest. This direct cloud check prevents
+a fresh Actions runner from redownloading the historical archive when its Redis
+instance starts empty.
 
 Configure these GitHub Actions repository secrets before enabling the schedule:
 
@@ -197,8 +199,8 @@ PITWALL_ADMIN_TOKEN
 
 The workflow uses an ephemeral Redis service, applies migrations, removes FastF1
 cache data after each session, and runs the cloud preflight when ingestion ends.
-Use manual dispatch after a postponed race or to retry a provider failure rather than
-waiting for the following Monday. Only one scheduled or manually dispatched ingestion
-run can execute at a time.
+Use manual dispatch after a session outside the normal Friday–Sunday UTC window or to
+retry a provider failure. Only one scheduled or manually dispatched ingestion run can
+execute at a time.
 The preparation API rejects requests without the matching `X-Pitwall-Admin` header;
 public visitors cannot start or inspect ingestion jobs.
