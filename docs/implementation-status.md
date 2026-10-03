@@ -44,7 +44,7 @@ not per-lap accuracy or evidence of counterfactual correctness.
 
 | Check | Current result |
 | --- | --- |
-| Backend unit suite | 56 passing |
+| Backend unit suite | 57 passing |
 | Frontend state/geometry suite | 8 passing |
 | Desktop/mobile browser suite | 14 passing |
 | Production health and catalogue | Passing |

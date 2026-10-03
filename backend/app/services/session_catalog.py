@@ -1,16 +1,18 @@
 import asyncio
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.core.exceptions import ExternalDataError
 from app.persistence.database import AsyncSessionLocal
+from app.persistence.models.race import RaceRecord
+from app.persistence.models.session import SessionRecord
 from app.persistence.repositories.workspace_repository import workspace_repository
 
 
@@ -52,7 +54,7 @@ class SessionCatalogService:
 
     def years(self) -> list[int]:
         current_year = datetime.now(
-            timezone.utc
+            UTC
         ).year
 
         return list(
@@ -81,7 +83,7 @@ class SessionCatalogService:
         fetched_at: datetime,
     ) -> bool:
         current_year = datetime.now(
-            timezone.utc
+            UTC
         ).year
 
         # Past seasons are effectively static.
@@ -90,7 +92,7 @@ class SessionCatalogService:
 
         age = (
             datetime.now(
-                timezone.utc
+                UTC
             )
             - fetched_at
         )
@@ -157,7 +159,7 @@ class SessionCatalogService:
             ):
                 fetched_at = (
                     fetched_at.replace(
-                        tzinfo=timezone.utc
+                        tzinfo=UTC
                     )
                 )
 
@@ -188,7 +190,7 @@ class SessionCatalogService:
         wrapper = {
             "fetched_at":
                 datetime.now(
-                    timezone.utc
+                    UTC
                 ).isoformat(),
 
             "catalogue":
@@ -393,20 +395,13 @@ class SessionCatalogService:
                 list,
             ):
                 raise ExternalDataError(
-                    (
-                        f"OpenF1 "
-                        f"{endpoint} "
-                        "returned unexpected data"
-                    )
+                    f"OpenF1 {endpoint} returned unexpected data"
                 )
 
             return payload
 
         raise ExternalDataError(
-            (
-                "Unable to retrieve "
-                f"OpenF1 {endpoint}"
-            )
+            f"Unable to retrieve OpenF1 {endpoint}"
         ) from last_error
 
     # =========================================================
@@ -492,6 +487,56 @@ class SessionCatalogService:
                 session["telemetry_available"] = key in telemetry
         return catalogue
 
+    async def _database_catalogue(self, year: int) -> dict[str, Any]:
+        """Build a usable catalogue from durable records when OpenF1 is unavailable."""
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(RaceRecord, SessionRecord)
+                .join(SessionRecord, SessionRecord.meeting_key == RaceRecord.meeting_key)
+                .where(SessionRecord.year == year)
+                .order_by(RaceRecord.date_start, SessionRecord.date_start)
+            )
+            rows = result.all()
+
+        telemetry_session_keys = await self._telemetry_session_keys()
+        meetings: dict[int, dict[str, Any]] = {}
+        for race, session in rows:
+            meeting = meetings.setdefault(
+                race.meeting_key,
+                {
+                    "meeting_key": race.meeting_key,
+                    "meeting_name": race.meeting_name,
+                    "meeting_official_name": race.meeting_official_name,
+                    "country_name": race.country_name,
+                    "country_code": None,
+                    "location": race.location,
+                    "circuit_short_name": race.circuit_short_name,
+                    "date_start": (
+                        race.date_start.isoformat() if race.date_start else None
+                    ),
+                    "sessions": [],
+                },
+            )
+            meeting["sessions"].append(
+                {
+                    "session_key": session.session_key,
+                    "meeting_key": session.meeting_key,
+                    "session_name": session.session_name,
+                    "session_type": session.session_type,
+                    "date_start": (
+                        session.date_start.isoformat() if session.date_start else None
+                    ),
+                    "date_end": session.date_end.isoformat() if session.date_end else None,
+                    "is_cancelled": session.is_cancelled,
+                    "ingested": True,
+                    "telemetry_available": (
+                        session.session_key in telemetry_session_keys
+                    ),
+                }
+            )
+
+        return {"year": year, "meetings": list(meetings.values())}
+
     async def year_catalogue(
         self,
         year: int,
@@ -545,25 +590,31 @@ class SessionCatalogService:
             # Do NOT use asyncio.gather here.
             # -------------------------------------------------
 
-            meetings = (
-                await self._get_openf1(
-                    "meetings",
-                    {
-                        "year":
-                            year,
-                    },
+            try:
+                meetings = (
+                    await self._get_openf1(
+                        "meetings",
+                        {
+                            "year":
+                                year,
+                        },
+                    )
                 )
-            )
 
-            sessions = (
-                await self._get_openf1(
-                    "sessions",
-                    {
-                        "year":
-                            year,
-                    },
+                sessions = (
+                    await self._get_openf1(
+                        "sessions",
+                        {
+                            "year":
+                                year,
+                        },
+                    )
                 )
-            )
+            except ExternalDataError:
+                database_catalogue = await self._database_catalogue(year)
+                if database_catalogue["meetings"]:
+                    return database_catalogue
+                raise
 
             local_session_keys = (
                 await self

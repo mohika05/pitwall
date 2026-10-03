@@ -10,9 +10,10 @@ complete truth for every field, and missing observations remain visible.
 
 The supported catalogue begins in 2023. Access and coverage vary by season, weekend and
 session type. OpenF1 may temporarily restrict historical endpoints during a live F1
-session; the catalogue worker stops cleanly and can be resumed after the provider
-window closes. Shared request spacing, retry limits and `Retry-After` handling reduce
-provider pressure.
+session. During that window, the public session directory falls back to durable
+PostgreSQL records so prepared races remain browsable; ingestion can resume after the
+provider window closes. Shared request spacing, retry limits and `Retry-After`
+handling reduce provider pressure.
 
 ## Normalization flow
 
