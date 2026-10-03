@@ -1,8 +1,9 @@
-name: Historical ingestion
+name: Post-race ingestion
 
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    # Monday 06:17 UTC / 11:47 IST, after the race weekend has ended.
+    - cron: "17 6 * * 1"
   workflow_dispatch:
     inputs:
       year:
@@ -11,7 +12,7 @@ on:
         type: string
 
 concurrency:
-  group: pitwall-historical-ingestion
+  group: pitwall-post-race-ingestion
   cancel-in-progress: false
 
 jobs:

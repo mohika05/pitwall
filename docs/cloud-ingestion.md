@@ -172,13 +172,17 @@ partial jobs have been reviewed.
 | `failed` | Session did not reach a usable prepared state | Fix provider/storage issue and retry |
 | `interrupted` | Process ended while the job was active | Rerun; startup will not resume it silently |
 
-## 7. Automatic post-session ingestion
+## 7. Automatic post-race ingestion
 
-The `Historical ingestion` GitHub Actions workflow runs every six hours and can also
-be started manually. It waits two hours after a session ends, inspects the previous
-30 days, checks R2 manifests directly, and prepares only sessions without a complete
-manifest. This direct cloud check prevents a fresh Actions runner from redownloading
-the historical archive when its Redis instance starts empty.
+The `Post-race ingestion` GitHub Actions workflow runs every Monday at 06:17 UTC
+(11:47 IST) and can also be started manually. Monday execution normally avoids
+OpenF1's live-session access window and allows the completed weekend to be processed
+in one batch.
+It inspects the previous 30 days, checks R2 manifests directly, and prepares only
+sessions without a complete manifest. On a week without a new race, every recent
+session is already complete and the run performs no ingestion. This direct cloud
+check prevents a fresh Actions runner from redownloading the historical archive when
+its Redis instance starts empty.
 
 Configure these GitHub Actions repository secrets before enabling the schedule:
 
@@ -193,6 +197,8 @@ PITWALL_ADMIN_TOKEN
 
 The workflow uses an ephemeral Redis service, applies migrations, removes FastF1
 cache data after each session, and runs the cloud preflight when ingestion ends.
-Only one scheduled or manually dispatched ingestion run can execute at a time.
+Use manual dispatch after a postponed race or to retry a provider failure rather than
+waiting for the following Monday. Only one scheduled or manually dispatched ingestion
+run can execute at a time.
 The preparation API rejects requests without the matching `X-Pitwall-Admin` header;
 public visitors cannot start or inspect ingestion jobs.

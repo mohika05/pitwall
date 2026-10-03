@@ -9,7 +9,7 @@ flowchart LR
     REPLAY --> ANALYZE[Session analysis]
     REPLAY --> STRATEGY[Dry-race strategy branch]
     STRATEGY --> VALIDATE[Backtest and held-out validation]
-    DATA --> AUTO[Scheduled post-session ingestion]
+    DATA --> AUTO[Weekly post-race ingestion]
 ```
 
 | Area | Implemented | Validation / remaining limitations |
@@ -22,7 +22,7 @@ flowchart LR
 | Session views | Practice pace summaries, recorded qualifying stages, Race/Sprint strategy gating | Qualifying enrichment needs a prepared qualifying session; no guessed elimination cutoffs |
 | Strategy | Historical/forecast branches, pit/tyre/traffic assumptions, saved comparisons, sensitivity reruns and recorded-stop backtesting | Determinism and future-data-isolation tests; approximate lap-level model |
 | ML | Training, session-separated holdout, versioned results, five-percent eligibility margin and deterministic fallback | Eight 2024 races trained with Singapore 2025 held out: 0.770s MAE versus 0.823s baseline; accepted with temporal season separation |
-| Operations | Dockerfiles, full Compose stack, CI, health endpoints, request metrics, local/S3 canonical storage, verified manifests, cache cleanup, resumable catalogue preparation, scheduled ingestion and same-origin Render deployment | Public deployment verified against Neon/R2; free hosting may cold-start and remains limited to one 512 MB worker |
+| Operations | Dockerfiles, full Compose stack, CI, health endpoints, request metrics, local/S3 canonical storage, verified manifests, cache cleanup, resumable catalogue preparation, weekly post-race ingestion and same-origin Render deployment | Public deployment verified against Neon/R2; free hosting may cold-start and remains limited to one 512 MB worker |
 
 Use a single backend worker. There are no viewer accounts in this local-first
 application; an administrator token protects preparation endpoints. Viewer IDs
@@ -44,7 +44,7 @@ not per-lap accuracy or evidence of counterfactual correctness.
 
 | Check | Current result |
 | --- | --- |
-| Backend unit suite | 54 passing |
+| Backend unit suite | 56 passing |
 | Frontend state/geometry suite | 8 passing |
 | Desktop/mobile browser suite | 14 passing |
 | Production health and catalogue | Passing |

@@ -95,7 +95,8 @@ explains that those races are outside the calibrated scope.
 - Publish a verified manifest only after every canonical object is written.
 - Delete disposable FastF1 cache data after each preparation attempt.
 - Resume a season-level ingestion run while skipping completed manifests.
-- Run scheduled post-session ingestion through GitHub Actions.
+- Run weekly post-race ingestion through GitHub Actions, publishing only sessions
+  that do not already have a complete cloud manifest.
 - Observe health endpoints, structured request logs and Prometheus-style counters.
 
 Preparation routes require an administrator token. Public visitors can use prepared
@@ -282,9 +283,11 @@ cd backend
 ../.venv/bin/python -m scripts.cloud_preflight
 ```
 
-The scheduled `.github/workflows/historical-ingestion.yml` workflow checks completed
-sessions every six hours, waits two hours after a session ends and ingests only missing
-manifests. It requires the database, object-storage and administrator-token secrets
+The `.github/workflows/historical-ingestion.yml` workflow runs every Monday at
+06:17 UTC (11:47 IST), after the race weekend. It inspects the previous 30 days and
+ingests only sessions without complete manifests, so a Monday with no new race is a
+quick no-op. Manual dispatch remains available for delayed races and recovery. The
+workflow requires the database, object-storage and administrator-token secrets
 described in [cloud ingestion setup](docs/cloud-ingestion.md).
 
 ## Testing
@@ -338,7 +341,7 @@ The public deployment uses a zero-cost stack:
 | Render free Key Value   | Disposable Redis-compatible replay cache           |
 | Neon free PostgreSQL    | Durable searchable metadata and workspace records  |
 | Cloudflare R2           | Compressed events, manifests and Parquet telemetry |
-| GitHub Actions          | CI and scheduled post-session ingestion            |
+| GitHub Actions          | CI and weekly post-race ingestion                   |
 
 `render.yaml` defines the Render web service and cache. The production process applies
 Alembic migrations, binds Render's assigned port and runs one Uvicorn worker. Keep one
