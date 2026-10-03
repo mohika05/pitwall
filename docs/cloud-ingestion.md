@@ -174,12 +174,17 @@ partial jobs have been reviewed.
 
 ## 7. Automatic post-session ingestion
 
-The `Post-session ingestion` GitHub Actions workflow performs a lightweight OpenF1
-calendar check every 30 minutes on Friday, Saturday and Sunday. It reads the published
-`date_end` values and starts the ingestion job only when a session ended 45–120
-minutes earlier. During OpenF1's live-session restriction the check exits successfully
-and tries again at the next interval. The full runner therefore starts around an hour
-after a completed session instead of running continuously throughout the week.
+The `Post-session ingestion` GitHub Actions workflow performs a lightweight hourly
+OpenF1 calendar check on Friday, Saturday and Sunday. It reads the published `date_end`
+values and makes staged ingestion attempts about 2, 5 and 10 hours after a session
+ends. These windows match the preparation command's two-hour archive delay while
+avoiding repeated full ingestion jobs every 30 minutes. During OpenF1's live-session
+restriction the check exits successfully and waits for the next staged attempt.
+
+A Monday catch-up runs once at 06:37 UTC to retry incomplete weekend sessions. Complete
+R2 manifests are skipped, so the catch-up does not redownload sessions that already
+succeeded. Provider publication is asynchronous, so Monday is a fallback rather than
+a guarantee; manual dispatch remains available for unusually delayed source data.
 
 Once started, it inspects the previous 30 days, checks R2 manifests directly, and
 prepares only sessions without a complete manifest. This direct cloud check prevents
@@ -200,7 +205,7 @@ PITWALL_ADMIN_TOKEN
 The workflow uses an ephemeral Redis service, applies migrations, removes FastF1
 cache data after each session, and runs the cloud preflight when ingestion ends.
 Use manual dispatch after a session outside the normal Friday–Sunday UTC window or to
-retry a provider failure. Only one scheduled or manually dispatched ingestion run can
-execute at a time.
+retry a provider failure that remains after the Monday catch-up. Only one scheduled or
+manually dispatched ingestion run can execute at a time.
 The preparation API rejects requests without the matching `X-Pitwall-Admin` header;
 public visitors cannot start or inspect ingestion jobs.

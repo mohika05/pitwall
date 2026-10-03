@@ -2,8 +2,9 @@ name: Post-session ingestion
 
 on:
   schedule:
-    # Poll only on race-weekend days. The detect job exits unless a session just ended.
-    - cron: "7,37 * * * 5,6,0"
+    # Check hourly for staged post-session retries, then run one Monday catch-up.
+    - cron: "17 * * * 5,6,0"
+    - cron: "37 6 * * 1"
   workflow_dispatch:
     inputs:
       year:
@@ -22,6 +23,7 @@ jobs:
       should_ingest: ${{ steps.session.outputs.should_ingest }}
     env:
       EVENT_NAME: ${{ github.event_name }}
+      EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
       INGESTION_YEAR: ${{ inputs.year || '' }}
     steps:
       - name: Check for a newly completed session
@@ -31,6 +33,12 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "should_ingest=true" >> "$GITHUB_OUTPUT"
             echo "Manual run requested; continuing to ingestion."
+            exit 0
+          fi
+
+          if [ "$EVENT_SCHEDULE" = "37 6 * * 1" ]; then
+            echo "should_ingest=true" >> "$GITHUB_OUTPUT"
+            echo "Monday catch-up requested; retrying incomplete weekend sessions."
             exit 0
           fi
 
@@ -47,7 +55,9 @@ jobs:
             [ -n "$session_key" ] && [ -n "$date_end" ] || continue
             ended="$(date -u -d "$date_end" +%s 2>/dev/null)" || continue
             age_seconds="$((now - ended))"
-            if [ "$age_seconds" -ge 2700 ] && [ "$age_seconds" -le 7200 ]; then
+            if { [ "$age_seconds" -ge 7200 ] && [ "$age_seconds" -lt 10800 ]; } || \
+               { [ "$age_seconds" -ge 18000 ] && [ "$age_seconds" -lt 21600 ]; } || \
+               { [ "$age_seconds" -ge 36000 ] && [ "$age_seconds" -lt 39600 ]; }; then
               echo "should_ingest=true" >> "$GITHUB_OUTPUT"
               echo "Session $session_key ended within the ingestion window."
               exit 0
@@ -55,7 +65,7 @@ jobs:
           done < <(printf '%s' "$sessions" | jq -r '.[] | [.session_key, .date_end] | @tsv')
 
           echo "should_ingest=false" >> "$GITHUB_OUTPUT"
-          echo "No session ended 45 to 120 minutes ago; no ingestion needed."
+          echo "No session is in the 2-hour, 5-hour, or 10-hour retry window."
 
   ingest:
     needs: detect
@@ -122,7 +132,7 @@ jobs:
             --completion-delay-minutes 120 \
             --admin-token "$PITWALL_ADMIN_TOKEN" \
             --catalog-retry-attempts 4 \
-            --retry-attempts 2
+            --retry-attempts 0
       - name: Verify cloud state
         if: always()
         run: python -m scripts.cloud_preflight

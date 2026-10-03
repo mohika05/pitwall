@@ -1,11 +1,16 @@
 from datetime import datetime, timezone
 
+import pytest
+from fastf1.exceptions import DataNotLoadedError
+
+from app.core.exceptions import ExternalDataError
 from app.domain.enums import EventType
-from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
 from app.ingestion.normalizers.laps import (
     normalize_laps,
 )
 from app.ingestion.normalizers.stints import normalize_stints
+from app.ingestion.providers import fastf1 as fastf1_provider
+from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
 
 
 def test_2023_sprint_qualifying_uses_fastf1_historical_name() -> None:
@@ -13,6 +18,21 @@ def test_2023_sprint_qualifying_uses_fastf1_historical_name() -> None:
         FastF1TelemetryProvider._session_name(2023, "Sprint Qualifying")
         == "Sprint Shootout"
     )
+
+
+def test_fastf1_unpublished_archive_is_reported_as_retryable(monkeypatch) -> None:
+    class Session:
+        def load(self, **_kwargs):
+            return None
+
+        @property
+        def laps(self):
+            raise DataNotLoadedError("laps")
+
+    monkeypatch.setattr(fastf1_provider.fastf1, "get_session", lambda *_args: Session())
+
+    with pytest.raises(ExternalDataError, match="scheduled ingestion will retry"):
+        FastF1TelemetryProvider._load_session_sync(2026, "Bahrain Grand Prix", "Practice 2")
     assert (
         FastF1TelemetryProvider._session_name(2024, "Sprint Qualifying")
         == "Sprint Qualifying"

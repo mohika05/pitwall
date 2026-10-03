@@ -7,6 +7,7 @@ from typing import Any
 
 import fastf1
 import pandas as pd
+from fastf1.exceptions import DataNotLoadedError
 
 from app.core.config import settings
 from app.core.exceptions import ExternalDataError
@@ -132,7 +133,17 @@ class FastF1TelemetryProvider:
                 weather=False,
                 messages=False,
             )
+            # FastF1 may log an archive-loading failure and return from load()
+            # without raising. Touching laps here turns that incomplete result into
+            # an explicit, retryable provider failure before preparation continues.
+            _ = session.laps
 
+        except DataNotLoadedError as exc:
+            raise ExternalDataError(
+                "FastF1 telemetry archive is not ready for "
+                f"{year} {event} {session_type}; "
+                "scheduled ingestion will retry"
+            ) from exc
         except Exception as exc:
             raise ExternalDataError(
                 (

@@ -46,9 +46,9 @@ controllers are disposable and historical data remains in Neon and R2.
 4. In Cloudflare R2, keep the bucket on **Standard** storage. The free allowance does
    not apply to Infrequent Access storage.
 
-The post-session workflow checks OpenF1 end times every 30 minutes on race-weekend
-days and starts its ingestion job only within the configured completion window. It
-executes `cloud_preflight` before ingestion and refuses to continue when stored objects
+The post-session workflow checks OpenF1 end times hourly on race-weekend days, retries
+sessions about 2, 5 and 10 hours after completion, and performs a Monday catch-up for
+incomplete weekend telemetry. It executes `cloud_preflight` before ingestion and refuses to continue when stored objects
 already exceed 9.5 GB, leaving headroom below R2's 10 GB-month allowance. Review R2
 usage periodically because provider accounting, operations, and unexpected traffic
 remain external limits.

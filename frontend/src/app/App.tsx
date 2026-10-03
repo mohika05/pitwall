@@ -16,6 +16,7 @@ import { request } from '../lib/api'
 import { useResource } from '../hooks/useResource'
 import { useRaceStore } from '../stores/raceStore'
 import type { Analysis } from '../types/analysis'
+import type { SessionListResponse } from '../types/sessions'
 
 export default function App() {
   const sessionKey = useRaceStore(s => s.sessionKey)
@@ -23,14 +24,17 @@ export default function App() {
   const [view, setView] = useState('Replay')
   const [bookmarkError, setBookmarkError] = useState('')
   const linked = useRef(false)
-  const analysis = useResource<Analysis>(sessionKey ? `/analysis/${sessionKey}` : null)
+  const sessions = useResource<SessionListResponse>('/sessions', 60_000)
+  const selectedSession = sessions.data?.sessions.find(session => session.session_key === sessionKey)
+  const telemetryAvailable = !sessions.loading && (selectedSession?.telemetry_available ?? true)
+  const analysis = useResource<Analysis>(sessionKey && telemetryAvailable ? `/analysis/${sessionKey}` : null)
   useEffect(() => {
-    if (sessionKey === null) return
+    if (sessionKey === null || !telemetryAvailable) return
     const socket = new RaceWebSocket(sessionKey)
     socket.connect()
     const timer = window.setInterval(() => socket.ping(), 20000)
     return () => { window.clearInterval(timer); socket.disconnect() }
-  }, [sessionKey])
+  }, [sessionKey, telemetryAvailable])
   useEffect(() => {
     if (!connected || !sessionKey || linked.current) return
     const query = new URLSearchParams(window.location.search)
@@ -42,12 +46,20 @@ export default function App() {
       request(`/replay/${sessionKey}/seek/time`, { method: 'POST', body: JSON.stringify({ timestamp: time }) }).catch(e => setBookmarkError(String(e)))
     }
   }, [connected, sessionKey])
+  const welcome = <section className="panel welcome-panel"><span className="eyebrow">YOUR ENGINEERING STATION</span><h1>Every lap tells a story.</h1><p>Choose a fully prepared Grand Prix session to explore timing, telemetry and alternative strategies.</p></section>
+  const workspaceReady = sessionKey !== null && !sessions.loading && telemetryAvailable
   return <main className="app-shell"><Header /><RaceBrowser />
-    <nav className="workspace-nav" aria-label="Workspaces">{['Replay', 'Analyze', 'Strategy'].map((name, index) => <button key={name} className={view === name ? 'active' : ''} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><small>0{index + 1}</small>{name}</button>)}<span className="nav-caption">THE RACE. EVERY DETAIL.</span></nav>
-    <F1Glossary />
-    {bookmarkError && <p role="alert" className="control-error">{bookmarkError}</p>}
-    {sessionKey !== null && <TelemetrySync />}
-    {sessionKey === null ? <section className="panel welcome-panel"><span className="eyebrow">YOUR ENGINEERING STATION</span><h1>Every lap tells a story.</h1><p>Choose a Grand Prix and prepare a session to explore timing, telemetry and alternative strategies.</p></section> : <>
+    {!workspaceReady ? <>
+      {sessionKey !== null && <section className="archive-notice" role="status">
+        <div><strong>{sessions.loading ? 'Checking session availability…' : 'Telemetry is still being processed'}</strong><span>{sessions.loading ? 'Pitwall is checking the cloud archive.' : `${selectedSession?.label ?? `Session ${sessionKey}`} will become available after FastF1 publishes its telemetry and circuit coordinates.`}</span></div>
+        {!sessions.loading && <button className="text-button" onClick={sessions.refresh}>Check availability</button>}
+      </section>}
+      {welcome}
+    </> : <>
+      <nav className="workspace-nav" aria-label="Workspaces">{['Replay', 'Analyze', 'Strategy'].map((name, index) => <button key={name} className={view === name ? 'active' : ''} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}><small>0{index + 1}</small>{name}</button>)}<span className="nav-caption">THE RACE. EVERY DETAIL.</span></nav>
+      <F1Glossary />
+      {bookmarkError && <p role="alert" className="control-error">{bookmarkError}</p>}
+      <TelemetrySync />
       <div className="session-data-actions"><span>{view.toUpperCase()} · {analysis.data ? `${analysis.data.session.year} ${analysis.data.session.country_name} · ${analysis.data.session.session_name}` : `Session ${sessionKey}`}</span><button className="text-button" onClick={analysis.refresh}>Refresh session analysis</button></div>
       <RaceStatus /><ReplayControls key={`replay-${sessionKey}`} analysis={analysis.data} />
       {view === 'Replay' ? <><div className="dashboard-grid"><RaceBoard /><TrackMap key={`track-${sessionKey}`} /></div><DriverTelemetry /><RaceInfo /></> : analysis.data ? view === 'Analyze' ? <AnalysisWorkspace key={`analysis-${sessionKey}`} analysis={analysis.data} /> : <StrategyWorkspace key={`strategy-${sessionKey}`} analysis={analysis.data} /> : <section className="panel empty-state">{analysis.error ?? 'Loading session analysis…'}{analysis.error && <button onClick={analysis.refresh}>Retry</button>}</section>}

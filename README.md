@@ -283,12 +283,13 @@ cd backend
 ../.venv/bin/python -m scripts.cloud_preflight
 ```
 
-The `.github/workflows/historical-ingestion.yml` workflow performs lightweight
-OpenF1 checks every 30 minutes on Friday, Saturday and Sunday. The ingestion job runs
-only when a session ended 45–120 minutes earlier, then skips every object that already
-has a complete manifest. Manual dispatch remains available for delayed sessions and
-recovery. The workflow requires the database, object-storage and administrator-token
-secrets described in [cloud ingestion setup](docs/cloud-ingestion.md).
+The `.github/workflows/historical-ingestion.yml` workflow performs lightweight hourly
+OpenF1 checks on Friday, Saturday and Sunday. It makes staged ingestion attempts about
+2, 5 and 10 hours after a session ends while skipping objects with complete manifests.
+A Monday catch-up retries the whole weekend after the providers have had more time to
+publish telemetry. Manual dispatch remains available for delayed sessions and recovery.
+The workflow requires the database, object-storage and administrator-token secrets
+described in [cloud ingestion setup](docs/cloud-ingestion.md).
 
 ## Testing
 

@@ -44,9 +44,9 @@ export function RaceBrowser() {
       <div className="catalogue-tabs" aria-label="Grand Prix weekends">{meetings.map(m => <button key={m.meeting_key} className={selectedMeeting?.meeting_key === m.meeting_key ? 'active' : ''} onClick={() => setMeeting(m.meeting_key)}>{m.meeting_name?.replace(' Grand Prix', '') ?? m.location}</button>)}</div>
       <div className="catalogue-tabs">{selectedMeeting?.sessions.map(s => {
         const ready = s.ingested
-        const availability = s.is_cancelled ? 'Cancelled session' : ready ? (s.telemetry_available ? 'Full timing and telemetry available' : 'Timing available; telemetry unavailable') : 'Historical data has not been archived yet'
+        const availability = s.is_cancelled ? 'Cancelled session' : ready ? (s.telemetry_available ? 'Full timing and telemetry available' : 'Timing is archived; telemetry and circuit map are still processing') : 'Historical data has not been archived yet'
         return <button key={s.session_key} disabled={!ready || s.is_cancelled} title={availability} aria-label={`${s.session_name}: ${availability}`} className={s.session_key === sessionKey ? 'active' : ''} onClick={() => setSession(s.session_key)}>
-          <span className={`catalogue-status ${ready ? 'catalogue-status--ready' : ''}`} /> {s.session_name} <small>{s.telemetry_available ? 'Full data' : ready ? 'Timing ready' : s.is_cancelled ? 'Cancelled' : 'Awaiting archive'}</small>
+          <span className={`catalogue-status ${s.telemetry_available ? 'catalogue-status--ready' : ready ? 'catalogue-status--processing' : ''}`} /> {s.session_name} <small>{s.telemetry_available ? 'Full data' : ready ? 'Processing telemetry' : s.is_cancelled ? 'Cancelled' : 'Awaiting archive'}</small>
         </button>
       })}</div>
       {catalogue.loading && <p className="muted">Loading calendar…</p>}
