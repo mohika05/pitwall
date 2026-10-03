@@ -36,6 +36,7 @@ label { font-size: .78rem; color: #b9c1ce; }
 .catalogue-status--processing { background: #d6a34a; box-shadow: 0 0 0 3px rgb(214 163 74 / 12%); }
 .idle .status-dot { background: #626b7a; }
 .disconnected .status-dot { background: #d68b45; }
+.pending .status-dot { background: #d6a34a; }
 h1, h2, h3, p { margin-top: 0; }
 h2 { font-size: 1.35rem; letter-spacing: -.035em; margin-bottom: 0; }
 .eyebrow { display: block; color: var(--muted); font-size: .6rem; font-weight: 700; letter-spacing: .15em; margin-bottom: 9px; }

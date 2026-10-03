@@ -3,7 +3,7 @@ import {
 } from "../stores/raceStore"
 
 
-export function ConnectionStatus() {
+export function ConnectionStatus({ archivePending = false }: { archivePending?: boolean }) {
     const sessionKey =
         useRaceStore(
         (state) =>
@@ -19,7 +19,9 @@ export function ConnectionStatus() {
 return (
     <div
     className={
-        connected
+        archivePending
+        ? "connection pending"
+        : connected
         ? "connection connected"
         : sessionKey === null
             ? "connection idle"
@@ -28,7 +30,9 @@ return (
     >
     <span className="status-dot" />
 
-    {sessionKey === null
+    {archivePending
+        ? "ARCHIVE PENDING"
+        : sessionKey === null
         ? "SELECT SESSION"
         : connected
             ? "REPLAY LINKED"

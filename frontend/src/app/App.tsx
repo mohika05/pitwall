@@ -46,12 +46,12 @@ export default function App() {
       request(`/replay/${sessionKey}/seek/time`, { method: 'POST', body: JSON.stringify({ timestamp: time }) }).catch(e => setBookmarkError(String(e)))
     }
   }, [connected, sessionKey])
-  const welcome = <section className="panel welcome-panel"><span className="eyebrow">YOUR ENGINEERING STATION</span><h1>Every lap tells a story.</h1><p>Choose a fully prepared Grand Prix session to explore timing, telemetry and alternative strategies.</p></section>
   const workspaceReady = sessionKey !== null && !sessions.loading && telemetryAvailable
-  return <main className="app-shell"><Header /><RaceBrowser />
+  const welcome = <section className="panel welcome-panel"><span className="eyebrow">{sessionKey === null ? 'YOUR ENGINEERING STATION' : 'SESSION ARCHIVE'}</span><h1>Every lap tells a story.</h1><p>{sessionKey === null ? 'Choose a fully prepared Grand Prix session to explore timing, telemetry and alternative strategies.' : 'This session will unlock automatically when its telemetry and circuit map are ready. You can explore another prepared session from the directory while Pitwall waits.'}</p></section>
+  return <main className="app-shell"><Header archivePending={sessionKey !== null && !workspaceReady} /><RaceBrowser />
     {!workspaceReady ? <>
       {sessionKey !== null && <section className="archive-notice" role="status">
-        <div><strong>{sessions.loading ? 'Checking session availability…' : 'Telemetry is still being processed'}</strong><span>{sessions.loading ? 'Pitwall is checking the cloud archive.' : `${selectedSession?.label ?? `Session ${sessionKey}`} will become available after FastF1 publishes its telemetry and circuit coordinates.`}</span></div>
+        <div><strong>{sessions.loading ? 'Checking session availability…' : 'Telemetry is still being processed'}</strong><span>{sessions.loading ? 'Pitwall is checking the cloud archive.' : `${selectedSession?.label ?? `Session ${sessionKey}`} will become available when telemetry and circuit coordinates are published. Pitwall checks automatically.`}</span></div>
         {!sessions.loading && <button className="text-button" onClick={sessions.refresh}>Check availability</button>}
       </section>}
       {welcome}
