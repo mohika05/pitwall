@@ -286,8 +286,10 @@ cd backend
 The `.github/workflows/historical-ingestion.yml` workflow performs lightweight hourly
 OpenF1 checks on Friday, Saturday and Sunday. It makes staged ingestion attempts about
 2, 5 and 10 hours after a session ends while skipping objects with complete manifests.
-A Monday catch-up retries the whole weekend after the providers have had more time to
-publish telemetry. Manual dispatch remains available for delayed sessions and recovery.
+Daily Monday-through-Thursday catch-ups run at midnight Singapore time and retry
+incomplete weekend sessions after the providers have had more time to publish
+telemetry. Complete manifests are skipped, so successful sessions are not downloaded
+again. Manual dispatch remains available for delayed sessions and recovery.
 The workflow requires the database, object-storage and administrator-token secrets
 described in [cloud ingestion setup](docs/cloud-ingestion.md).
 

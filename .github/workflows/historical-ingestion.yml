@@ -2,9 +2,10 @@ name: Post-session ingestion
 
 on:
   schedule:
-    # Check hourly for staged post-session retries, then run one Monday catch-up.
+    # Check hourly for staged race-weekend retries, then retry once daily until Friday.
     - cron: "17 * * * 5,6,0"
-    - cron: "37 6 * * 1"
+    # 16:00 UTC Sunday-Wednesday is 00:00 Monday-Thursday in Singapore.
+    - cron: "0 16 * * 0-3"
   workflow_dispatch:
     inputs:
       year:
@@ -36,9 +37,9 @@ jobs:
             exit 0
           fi
 
-          if [ "$EVENT_SCHEDULE" = "37 6 * * 1" ]; then
+          if [ "$EVENT_SCHEDULE" = "0 16 * * 0-3" ]; then
             echo "should_ingest=true" >> "$GITHUB_OUTPUT"
-            echo "Monday catch-up requested; retrying incomplete weekend sessions."
+            echo "Daily catch-up requested; retrying incomplete weekend sessions."
             exit 0
           fi
 

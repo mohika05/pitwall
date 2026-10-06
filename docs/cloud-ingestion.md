@@ -181,10 +181,12 @@ ends. These windows match the preparation command's two-hour archive delay while
 avoiding repeated full ingestion jobs every 30 minutes. During OpenF1's live-session
 restriction the check exits successfully and waits for the next staged attempt.
 
-A Monday catch-up runs once at 06:37 UTC to retry incomplete weekend sessions. Complete
-R2 manifests are skipped, so the catch-up does not redownload sessions that already
-succeeded. Provider publication is asynchronous, so Monday is a fallback rather than
-a guarantee; manual dispatch remains available for unusually delayed source data.
+A catch-up runs at midnight Singapore time each day from Monday through Thursday
+(16:00 UTC Sunday through Wednesday) to retry incomplete weekend sessions until the
+next race-weekend schedule begins. Complete R2 manifests are skipped, so catch-ups do
+not redownload sessions that already succeeded. Provider
+publication is asynchronous; manual dispatch remains available for unusually delayed
+source data.
 
 Once started, it inspects the previous 30 days, checks R2 manifests directly, and
 prepares only sessions without a complete manifest. This direct cloud check prevents
@@ -205,7 +207,7 @@ PITWALL_ADMIN_TOKEN
 The workflow uses an ephemeral Redis service, applies migrations, removes FastF1
 cache data after each session, and runs the cloud preflight when ingestion ends.
 Use manual dispatch after a session outside the normal Friday–Sunday UTC window or to
-retry a provider failure that remains after the Monday catch-up. Only one scheduled or
-manually dispatched ingestion run can execute at a time.
+retry a provider failure that remains after the Thursday catch-up. Only one scheduled
+or manually dispatched ingestion run can execute at a time.
 The preparation API rejects requests without the matching `X-Pitwall-Admin` header;
 public visitors cannot start or inspect ingestion jobs.
