@@ -71,18 +71,10 @@ jobs:
   ingest:
     needs: detect
     if: needs.detect.outputs.should_ingest == 'true'
-    runs-on: ubuntu-latest
+    # Ubuntu runners use Azure addresses that Formula 1's archive rejects. GitHub's
+    # hosted macOS runners use a separate network and keep ingestion cloud-only.
+    runs-on: macos-latest
     timeout-minutes: 330
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -111,6 +103,25 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/pyproject.toml
+      - name: Verify Formula 1 archive access
+        run: |
+          year="${INGESTION_YEAR:-$(date -u +%Y)}"
+          archive_url="https://livetiming.formula1.com/static/$year/Index.json"
+          archive_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$archive_url")"
+          echo "Formula 1 archive status: $archive_status"
+          if [ "$archive_status" != "200" ]; then
+            echo "The hosted runner cannot access $archive_url"
+            exit 1
+          fi
+      - name: Start Redis
+        run: |
+          brew install redis
+          redis-server --daemonize yes
+          for attempt in {1..30}; do
+            redis-cli ping | grep -q PONG && exit 0
+            sleep 1
+          done
+          exit 1
       - run: pip install -e .
       - run: alembic upgrade head
       - name: Start ingestion API

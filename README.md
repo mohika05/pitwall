@@ -290,6 +290,9 @@ Daily Monday-through-Thursday catch-ups run at midnight Singapore time and retry
 incomplete weekend sessions after the providers have had more time to publish
 telemetry. Complete manifests are skipped, so successful sessions are not downloaded
 again. Manual dispatch remains available for delayed sessions and recovery.
+The ingestion job uses GitHub's hosted macOS runner because Formula 1 rejects the
+shared Azure addresses used by hosted Ubuntu runners. It verifies archive access before
+starting preparation and runs Redis directly on the macOS worker.
 The workflow requires the database, object-storage and administrator-token secrets
 described in [cloud ingestion setup](docs/cloud-ingestion.md).
 

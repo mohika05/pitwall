@@ -54,6 +54,11 @@ already exceed 9.5 GB, leaving headroom below R2's 10 GB-month allowance. Review
 usage periodically because provider accounting, operations, and unexpected traffic
 remain external limits.
 
+FastF1 ingestion uses a standard GitHub-hosted macOS runner and checks the Formula 1
+archive before preparation. This avoids the Azure network used by hosted Ubuntu
+runners, which the Formula 1 archive rejects. The detector remains on Ubuntu because it
+only calls OpenF1 and does not download FastF1 telemetry.
+
 ## Create the Render Blueprint
 
 1. Sign in to Render without adding a payment method. With no payment method, Render

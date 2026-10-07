@@ -188,6 +188,13 @@ not redownload sessions that already succeeded. Provider
 publication is asynchronous; manual dispatch remains available for unusually delayed
 source data.
 
+The lightweight detector runs on Ubuntu. The ingestion job runs on GitHub's standard
+hosted macOS worker, whose network is separate from the Azure addresses used by hosted
+Ubuntu runners. Before installing the backend or processing a session, the job checks
+the current Formula 1 archive index and fails with its HTTP status if that runner is
+also denied access. Redis is installed and started on the macOS worker because GitHub
+service containers require a Linux runner.
+
 Once started, it inspects the previous 30 days, checks R2 manifests directly, and
 prepares only sessions without a complete manifest. This direct cloud check prevents
 a fresh Actions runner from redownloading the historical archive when its Redis
