@@ -188,31 +188,28 @@ not redownload sessions that already succeeded. Provider
 publication is asynchronous; manual dispatch remains available for unusually delayed
 source data.
 
-The lightweight detector runs on Ubuntu. The ingestion job runs on GitHub's standard
-hosted macOS worker, whose network is separate from the Azure addresses used by hosted
-Ubuntu runners. Before installing the backend or processing a session, the job checks
-the current Formula 1 archive index and fails with its HTTP status if that runner is
-also denied access. Redis is installed and started on the macOS worker because GitHub
-service containers require a Linux runner.
+Both jobs run on Ubuntu, but GitHub performs only detection and orchestration. The
+workflow calls the deployed Render preparation API and polls each job to a terminal
+state. Render performs the provider downloads and writes canonical data to Neon and
+R2. This keeps FastF1 archive traffic away from GitHub-hosted runner addresses, which
+the Formula 1 archive rejects.
 
-Once started, it inspects the previous 30 days, checks R2 manifests directly, and
-prepares only sessions without a complete manifest. This direct cloud check prevents
-a fresh Actions runner from redownloading the historical archive when its Redis
-instance starts empty.
+The remote orchestrator inspects the previous 30 days through the public catalogue and
+requests only sessions that are not telemetry-ready. Render owns its preparation queue,
+Redis connection, database connection, R2 credentials, temporary FastF1 files and
+cleanup. Continuous polling keeps the free web service active while a session runs.
 
-Configure these GitHub Actions repository secrets before enabling the schedule:
+Configure this GitHub Actions **repository secret** before enabling the schedule:
 
 ```text
-DATABASE_URL
-S3_BUCKET
-S3_ENDPOINT_URL
-S3_ACCESS_KEY_ID
-S3_SECRET_ACCESS_KEY
 PITWALL_ADMIN_TOKEN
 ```
 
-The workflow uses an ephemeral Redis service, applies migrations, removes FastF1
-cache data after each session, and runs the cloud preflight when ingestion ends.
+Its value must exactly match `PITWALL_ADMIN_TOKEN` in the Render web service. Do not
+place it under a GitHub Environment unless the job also declares that environment.
+You may also create a repository variable named `PITWALL_API_URL`; if omitted, the
+workflow uses `https://pitwall-be4a.onrender.com`.
+
 Use manual dispatch after a session outside the normal Friday–Sunday UTC window or to
 retry a provider failure that remains after the Thursday catch-up. Only one scheduled
 or manually dispatched ingestion run can execute at a time.

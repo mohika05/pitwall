@@ -13,8 +13,7 @@ flowchart LR
     R <--> K[(Render Key Value<br/>disposable cache)]
     R <--> N[(Neon PostgreSQL<br/>durable metadata)]
     R <--> O[(Cloudflare R2<br/>durable events and Parquet)]
-    G[GitHub Actions<br/>event-aware post-session ingestion] --> N
-    G --> O
+    G[GitHub Actions<br/>schedule + monitoring] -->|Protected preparation request| R
 ```
 
 ## Zero-cost stack
@@ -25,7 +24,7 @@ flowchart LR
 | Replay state | Render free Key Value | Disposable Redis-compatible state |
 | Metadata | Existing Neon free project | Durable PostgreSQL metadata |
 | Replay and telemetry | Existing Cloudflare R2 Standard bucket | Durable objects below the 10 GB-month allowance |
-| Post-session ingestion | GitHub Actions | Detects completed sessions and publishes missing data |
+| Post-session ingestion | GitHub Actions + Render | GitHub schedules; Render downloads and publishes data |
 
 The root `render.yaml` creates the Render web service and Key Value instance together.
 Do not add a Render Postgres database: free Render databases expire after 30 days,
@@ -49,15 +48,11 @@ controllers are disposable and historical data remains in Neon and R2.
 The post-session workflow checks OpenF1 end times hourly on race-weekend days, retries
 sessions about 2, 5 and 10 hours after completion, and performs daily catch-ups at
 midnight Singapore time from Monday through Thursday for incomplete weekend telemetry.
-It executes `cloud_preflight` before ingestion and refuses to continue when stored objects
-already exceed 9.5 GB, leaving headroom below R2's 10 GB-month allowance. Review R2
-usage periodically because provider accounting, operations, and unexpected traffic
-remain external limits.
-
-FastF1 ingestion uses a standard GitHub-hosted macOS runner and checks the Formula 1
-archive before preparation. This avoids the Azure network used by hosted Ubuntu
-runners, which the Formula 1 archive rejects. The detector remains on Ubuntu because it
-only calls OpenF1 and does not download FastF1 telemetry.
+GitHub calls the protected preparation endpoint and polls it, while the Render service
+performs OpenF1/FastF1 downloads and publishes metadata and objects to Neon and R2.
+This avoids the Formula 1 archive restrictions encountered by GitHub-hosted runners.
+Run `cloud_preflight` periodically to verify object integrity and keep stored objects
+below the 9.5 GB safety target.
 
 ## Create the Render Blueprint
 
@@ -77,8 +72,9 @@ only calls OpenF1 and does not download FastF1 telemetry.
    S3_SECRET_ACCESS_KEY=<R2 secret access key>
    ```
 
-   `REDIS_URL` is connected automatically to `pitwall-cache`, and Render generates the
-   production-only `PITWALL_ADMIN_TOKEN`. Never paste secrets into `render.yaml`.
+   `REDIS_URL` is connected automatically to `pitwall-cache`. Set a generated
+   `PITWALL_ADMIN_TOKEN` on Render, then save the exact same value as the GitHub Actions
+   repository secret `PITWALL_ADMIN_TOKEN`. Never paste secrets into `render.yaml`.
 
 5. Apply the Blueprint. The container builds the frontend, installs the backend,
    applies Alembic migrations, and starts one Uvicorn worker on Render's assigned port.
