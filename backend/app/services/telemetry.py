@@ -89,10 +89,8 @@ def _load_frame_uncached(
 
     if "Date" not in frame.columns:
         raise ValueError(
-            (
-                "Telemetry file does not "
-                f"contain Date: {path}"
-            )
+            "Telemetry file does not "
+            f"contain Date: {path}"
         )
 
     frame = frame.copy()
@@ -126,9 +124,12 @@ def _load_car_frame(path_string: str) -> pd.DataFrame:
     return _load_frame_uncached(path_string)
 
 
-@lru_cache(maxsize=20)
+@lru_cache(maxsize=32)
 def _load_position_frame(path_string: str) -> pd.DataFrame:
-    # Position channels are much smaller and are reused for the circuit map.
+    # A modern field can contain 22 drivers. Keep one complete field resident;
+    # a smaller cache causes a sequential snapshot to evict the first drivers
+    # before the next refresh and re-download every file from object storage.
+    # Position channels are much smaller than car telemetry.
     return _load_frame_uncached(path_string)
 
 
@@ -402,10 +403,8 @@ class TelemetryService:
             or max_points > 2000
         ):
             raise ValueError(
-                (
-                    "max_points must be "
-                    "between 10 and 2000"
-                )
+                "max_points must be "
+                "between 10 and 2000"
             )
 
         car_frame, position_frame = (

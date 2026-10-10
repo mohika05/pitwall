@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from fastapi import (
@@ -15,7 +16,6 @@ from app.persistence.repositories.session_repository import (
 from app.services.telemetry import (
     telemetry_service,
 )
-
 
 router = APIRouter(
     prefix="/telemetry",
@@ -54,7 +54,15 @@ async def telemetry_snapshot(
                 detail=str(exc),
             ) from exc
 
-    selected_driver = driver.upper() if driver else None
+    selected_driver = driver.upper() if driver else next(
+        (
+            session_driver.name_acronym.upper()
+            for session_driver in context.drivers
+            if session_driver.name_acronym
+        ),
+        None,
+    )
+    load_limit = asyncio.Semaphore(6)
 
     async def load_driver(
         session_driver,
@@ -65,16 +73,19 @@ async def telemetry_snapshot(
         try:
             loader = (
                 telemetry_service.snapshot
-                if selected_driver is None
-                or session_driver.name_acronym.upper() == selected_driver
+                if session_driver.name_acronym.upper() == selected_driver
                 else telemetry_service.position_snapshot
             )
-            snapshot = await loader(
-                session_key=session_key,
-                driver=session_driver.name_acronym,
-                timestamp=timestamp,
-                tolerance_seconds=tolerance_seconds,
-            )
+            # Cold sessions require one small position object per driver from
+            # R2. Load a bounded group concurrently so the first map appears
+            # quickly without creating an unbounded memory spike.
+            async with load_limit:
+                snapshot = await loader(
+                    session_key=session_key,
+                    driver=session_driver.name_acronym,
+                    timestamp=timestamp,
+                    tolerance_seconds=tolerance_seconds,
+                )
 
         except (
             FileNotFoundError,
@@ -98,12 +109,12 @@ async def telemetry_snapshot(
 
         return snapshot
 
-    # Loading every driver's full car and position frame concurrently exceeds
-    # the 512 MiB deployment tier. Keep peak memory bounded and return full car
-    # telemetry only for the driver the viewer selected.
-    results = []
-    for session_driver in context.drivers:
-        results.append(await load_driver(session_driver))
+    # Return full car telemetry only for the selected driver. Position files
+    # are small enough for bounded concurrent loading and remain cached for
+    # smooth quarter-second refreshes.
+    results = await asyncio.gather(
+        *(load_driver(session_driver) for session_driver in context.drivers)
+    )
 
     return {
         "session_key": session_key,
