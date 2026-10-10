@@ -22,7 +22,7 @@ flowchart LR
 | Session views | Practice pace summaries, recorded qualifying stages, Race/Sprint strategy gating | Qualifying enrichment needs a prepared qualifying session; no guessed elimination cutoffs |
 | Strategy | Historical/forecast branches, pit/tyre/traffic assumptions, saved comparisons, sensitivity reruns and recorded-stop backtesting | Determinism and future-data-isolation tests; approximate lap-level model |
 | ML | Training, session-separated holdout, versioned results, five-percent eligibility margin and deterministic fallback | Eight 2024 races trained with Singapore 2025 held out: 0.770s MAE versus 0.823s baseline; accepted with temporal season separation |
-| Operations | Dockerfiles, full Compose stack, CI, health endpoints, request metrics, local/S3 canonical storage, verified manifests, cache cleanup, resumable catalogue preparation, event-aware post-session ingestion and same-origin Render deployment | Public deployment verified against Neon/R2; free hosting may cold-start and remains limited to one 512 MB worker |
+| Operations | Dockerfiles, full Compose stack, CI, health endpoints, request metrics, local/S3 canonical storage, verified manifests, cache cleanup, resumable catalogue preparation, chunked FastF1 telemetry export, event-aware post-session ingestion and same-origin Render deployment | Public deployment verified against Neon/R2; full-race ingestion measured at 243 MB peak against the free 512 MB worker |
 
 Use a single backend worker. There are no viewer accounts in this local-first
 application; an administrator token protects preparation endpoints. Viewer IDs

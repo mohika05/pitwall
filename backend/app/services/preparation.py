@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 import pandas as pd
 
 from app.core.config import settings
-from app.core.exceptions import ExternalDataError
 from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
 from app.ingestion.providers.openf1 import OpenF1Provider
 from app.ingestion.service import IngestionService
@@ -99,6 +98,7 @@ class PreparationService:
                         context.session.year,
                         bundle.meeting.get("meeting_name") or context.session.country_name,
                         context.session.session_name,
+                        telemetry=False,
                     )
                     # Preserve provider qualifying segments and official stage results.
                     enrichment = {"qualifying": [], "lap_stages": {}}
@@ -143,39 +143,39 @@ class PreparationService:
                         )
                     if not drivers:
                         raise ValueError("FastF1 returned no laps for any session driver")
-                    succeeded = 0
-                    telemetry_drivers: list[str] = []
-                    for index, driver in enumerate(drivers):
-                        try:
-                            extracted = await fast.extract_driver(loaded, driver)
-                            _, objects = await fast.export_driver(key, extracted)
-                            stored_files.extend(objects)
-                            succeeded += 1
-                            telemetry_drivers.append(driver)
-                        except ExternalDataError as exc:
-                            # Historical providers occasionally expose laps for a
-                            # driver without publishing both telemetry channels.
-                            # Keep the verified drivers usable and describe the
-                            # source-data gap instead of making the whole session
-                            # partial.
-                            logger.warning(
-                                "Telemetry unavailable for %s in session %s: %s",
-                                driver,
-                                key,
-                                exc,
-                            )
-                            unavailable_drivers.append(driver)
-                            job["telemetry_unavailable_drivers"] = sorted(
-                                set(unavailable_drivers)
-                            )
-                        except Exception as exc:
-                            logger.exception("Telemetry preparation failed for %s", driver)
-                            job["errors"].append(f"{driver}: {type(exc).__name__}")
+                    completed_channels = {driver: set() for driver in drivers}
+                    channel_ranges = {
+                        "car": (40, 27, "Car telemetry"),
+                        "position": (67, 28, "Position telemetry"),
+                    }
+                    for channel, (base, span, label) in channel_ranges.items():
+                        job.update(progress=base, message=f"Decoding {label.lower()}")
+                        await self.save(job)
+                        exports, objects = await fast.export_channel_streaming(
+                            key, loaded, drivers, channel
+                        )
+                        stored_files.extend(objects)
+                        exported_drivers = {exported.driver for exported in exports}
+                        for driver in exported_drivers:
+                            completed_channels[driver].add(channel)
+                        unavailable_drivers.extend(
+                            driver for driver in drivers if driver not in exported_drivers
+                        )
+                        job["telemetry_unavailable_drivers"] = sorted(
+                            set(unavailable_drivers)
+                        )
                         job.update(
-                            progress=40 + round(55 * (index + 1) / max(len(drivers), 1)),
-                            message=f"Telemetry {index + 1}/{len(drivers)} drivers",
+                            progress=base + span,
+                            message=f"{label} ready for {len(exported_drivers)}/{len(drivers)} drivers",
                         )
                         await self.save(job)
+
+                    telemetry_drivers = [
+                        driver
+                        for driver, channels in completed_channels.items()
+                        if channels == {"car", "position"}
+                    ]
+                    succeeded = len(telemetry_drivers)
                     if succeeded == 0:
                         raise ValueError(
                             "FastF1 produced no usable telemetry for any session driver"

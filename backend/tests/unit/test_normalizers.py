@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 
+import pandas as pd
 import pytest
 from fastf1.exceptions import DataNotLoadedError
 
@@ -39,8 +40,100 @@ def test_fastf1_unpublished_archive_is_reported_as_retryable(monkeypatch) -> Non
     )
 
 
+def test_fastf1_session_can_skip_eager_telemetry(monkeypatch) -> None:
+    calls = []
+
+    class Session:
+        laps = pd.DataFrame({"LapNumber": [1]})
+
+        def load(self, **kwargs):
+            calls.append(kwargs)
+
+    session = Session()
+    monkeypatch.setattr(fastf1_provider.fastf1, "get_session", lambda *_args: session)
+
+    loaded = FastF1TelemetryProvider._load_session_sync(
+        2026, "Bahrain Grand Prix", "Race", telemetry=False
+    )
+
+    assert loaded is session
+    assert calls[0]["telemetry"] is False
+
+
+def test_fastf1_stream_samples_are_assigned_to_laps() -> None:
+    boundaries = ([10.0, 20.0], [(10.0, 20.0, 1), (20.0, 30.0, 2)])
+
+    assert FastF1TelemetryProvider._lap_number_at(boundaries, 5.0) is None
+    assert FastF1TelemetryProvider._lap_number_at(boundaries, 12.0) == 1
+    assert FastF1TelemetryProvider._lap_number_at(boundaries, 22.0) == 2
+    assert FastF1TelemetryProvider._lap_number_at(boundaries, 31.0) is None
+
+
+def test_fastf1_streaming_writer_flushes_driver_parquet(monkeypatch, tmp_path) -> None:
+    class Laps:
+        def pick_drivers(self, _driver):
+            return pd.DataFrame(
+                {
+                    "LapNumber": [1],
+                    "LapStartTime": [timedelta(seconds=10)],
+                    "Time": [timedelta(seconds=20)],
+                }
+            )
+
+    class Session:
+        api_path = "/static/test/"
+        laps = Laps()
+
+        @staticmethod
+        def get_driver(_driver):
+            return {"DriverNumber": "1"}
+
+    monkeypatch.setattr(
+        fastf1_provider.fastf1_api,
+        "fetch_page",
+        lambda *_args: ["00:00:12.000payload"],
+    )
+    monkeypatch.setattr(
+        fastf1_provider.fastf1_api,
+        "parse",
+        lambda *_args, **_kwargs: {
+            "Entries": [
+                {
+                    "Utc": "2026-10-04T12:00:12.000Z",
+                    "Cars": {
+                        "1": {
+                            "Channels": {
+                                "0": "12000",
+                                "2": "300",
+                                "3": "8",
+                                "4": "100",
+                                "5": "0",
+                            }
+                        }
+                    },
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        FastF1TelemetryProvider,
+        "_driver_directory",
+        staticmethod(lambda _session_key: tmp_path),
+    )
+
+    exports = FastF1TelemetryProvider._stream_channel_sync(
+        11731, Session(), ["VER"], "car", chunk_rows=1
+    )
+
+    assert len(exports) == 1
+    frame = pd.read_parquet(exports[0].path)
+    assert frame[["LapNumber", "Speed", "Brake"]].to_dict("records") == [
+        {"LapNumber": 1, "Speed": 300, "Brake": False}
+    ]
+
+
 def test_stint_without_recorded_laps_does_not_block_session():
-    start = datetime(2025, 4, 20, 17, tzinfo=timezone.utc)
+    start = datetime(2025, 4, 20, 17, tzinfo=UTC)
     common = {"meeting_key": 1258, "session_key": 10022, "stint_number": 1,
               "compound": "MEDIUM", "tyre_age_at_start": 0}
     rows = [
@@ -94,7 +187,7 @@ def test_lap_normalization() -> None:
             0,
             1,
             30,
-            tzinfo=timezone.utc,
+            tzinfo=UTC,
         )
     )
 

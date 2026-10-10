@@ -295,7 +295,9 @@ on the deployed Render service, where OpenF1/FastF1 processing and writes to Neo
 R2 occur. This keeps provider downloads away from GitHub-hosted runner addresses,
 which the Formula 1 archive rejects. The workflow requires a repository secret named
 `PITWALL_ADMIN_TOKEN` that exactly matches the value configured on Render. The optional
-repository variable `PITWALL_API_URL` overrides the public deployment URL.
+repository variable `PITWALL_API_URL` overrides the public deployment URL. Render
+decodes car and position streams separately and flushes bounded Parquet batches so a
+full race fits within the free instance's 512 MB memory limit.
 
 ## Testing
 
