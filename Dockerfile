@@ -16,4 +16,4 @@ COPY backend/migrations ./migrations
 COPY --from=frontend-build /frontend/dist /app/frontend_dist
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+CMD ["sh", "-c", "alembic upgrade head || echo 'WARNING: database migration unavailable; starting service with the existing schema'; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
