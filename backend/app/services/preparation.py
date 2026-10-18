@@ -2,11 +2,13 @@
 
 import asyncio
 import logging
+from bisect import bisect_right
 from datetime import UTC, datetime
 
 import pandas as pd
 
 from app.core.config import settings
+from app.core.exceptions import ExternalDataError
 from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
 from app.ingestion.providers.openf1 import OpenF1Provider
 from app.ingestion.service import IngestionService
@@ -33,6 +35,123 @@ def drivers_with_fastf1_laps(loaded, requested: list[str]) -> tuple[list[str], l
     available = [driver for driver in requested if driver.upper() in recorded]
     unavailable = [driver for driver in requested if driver.upper() not in recorded]
     return available, unavailable
+
+
+def drivers_with_openf1_laps(bundle, requested: list[str]) -> tuple[list[str], list[str]]:
+    number_by_driver = {
+        str(row.get("name_acronym") or "").upper(): int(row["driver_number"])
+        for row in bundle.drivers
+        if row.get("name_acronym") and row.get("driver_number") is not None
+    }
+    recorded = {
+        int(row["driver_number"])
+        for row in bundle.laps
+        if row.get("driver_number") is not None and row.get("date_start")
+    }
+    available = [
+        driver
+        for driver in requested
+        if number_by_driver.get(driver.upper()) in recorded
+    ]
+    unavailable = [driver for driver in requested if driver not in available]
+    return available, unavailable
+
+
+def openf1_enrichment(bundle, session_name: str) -> dict:
+    """Build qualifying results and lap-stage labels from OpenF1 resources."""
+    enrichment: dict = {"qualifying": [], "lap_stages": {}}
+    name = session_name.casefold()
+    if "qualifying" not in name and "shootout" not in name:
+        return enrichment
+
+    for row in bundle.session_result:
+        number = row.get("driver_number")
+        if number is None:
+            continue
+        duration = row.get("duration")
+        stages = duration if isinstance(duration, list) else [duration]
+        enrichment["qualifying"].append(
+            {
+                "driver_number": int(number),
+                **{
+                    f"Q{index}": (
+                        None
+                        if index > len(stages) or stages[index - 1] is None
+                        else float(stages[index - 1])
+                    )
+                    for index in (1, 2, 3)
+                },
+                "position": (
+                    None if row.get("position") is None else int(row["position"])
+                ),
+            }
+        )
+
+    phase_markers: list[tuple[datetime, str]] = []
+    for row in bundle.race_control:
+        phase = row.get("qualifying_phase")
+        date = row.get("date")
+        if phase not in (1, 2, 3, "1", "2", "3") or not date:
+            continue
+        try:
+            phase_markers.append(
+                (datetime.fromisoformat(str(date)), f"Q{phase}")
+            )
+        except ValueError:
+            continue
+    phase_markers.sort(key=lambda item: item[0])
+    marker_dates = [item[0] for item in phase_markers]
+    for lap in bundle.laps:
+        started = lap.get("date_start")
+        number = lap.get("driver_number")
+        lap_number = lap.get("lap_number")
+        if not phase_markers or not started or number is None or lap_number is None:
+            continue
+        try:
+            timestamp = datetime.fromisoformat(str(started))
+        except ValueError:
+            continue
+        index = bisect_right(marker_dates, timestamp) - 1
+        if index >= 0:
+            enrichment["lap_stages"][f"{int(number)}:{int(lap_number)}"] = (
+                phase_markers[index][1]
+            )
+    return enrichment
+
+
+def fastf1_enrichment(loaded, session_name: str) -> dict:
+    """Preserve FastF1's richer qualifying segmentation when it is available."""
+    enrichment: dict = {"qualifying": [], "lap_stages": {}}
+    name = session_name.casefold()
+    if "qualifying" not in name and "shootout" not in name:
+        return enrichment
+    for _, row in loaded.results.iterrows():
+        enrichment["qualifying"].append(
+            {
+                "driver_number": int(row["DriverNumber"]),
+                **{
+                    stage: (
+                        None
+                        if pd.isna(row.get(stage))
+                        else row[stage].total_seconds()
+                    )
+                    for stage in ("Q1", "Q2", "Q3")
+                },
+                "position": (
+                    None
+                    if pd.isna(row.get("Position"))
+                    else int(row["Position"])
+                ),
+            }
+        )
+    for index, laps in enumerate(loaded.laps.split_qualifying_sessions(), 1):
+        if laps is None:
+            continue
+        for _, row in laps.iterrows():
+            enrichment["lap_stages"][
+                f"{int(row['DriverNumber'])}:{int(row['LapNumber'])}"
+            ] = f"Q{index}"
+    return enrichment
 
 
 class PreparationService:
@@ -64,6 +183,110 @@ class PreparationService:
         job["updated_at"] = datetime.now(UTC).isoformat()
         await records.put("preparation", str(job["session_key"]), dict(job))
 
+    async def _export_telemetry_channels(
+        self,
+        job: dict,
+        provider,
+        source,
+        drivers: list[str],
+        unavailable_drivers: list[str],
+    ) -> tuple[list[dict], list[str]]:
+        completed_channels = {driver: set() for driver in drivers}
+        stored_files: list[dict] = []
+        channel_ranges = {
+            "car": (40, 27, "Car telemetry"),
+            "position": (67, 28, "Position telemetry"),
+        }
+        for channel, (base, span, label) in channel_ranges.items():
+            job.update(progress=base, message=f"Downloading {label.lower()}")
+            await self.save(job)
+            exports, objects = await provider.export_channel_streaming(
+                job["session_key"], source, drivers, channel
+            )
+            stored_files.extend(objects)
+            exported_drivers = {exported.driver for exported in exports}
+            for driver in exported_drivers:
+                completed_channels[driver].add(channel)
+            unavailable_drivers.extend(
+                driver for driver in drivers if driver not in exported_drivers
+            )
+            job["telemetry_unavailable_drivers"] = sorted(set(unavailable_drivers))
+            job.update(
+                progress=base + span,
+                message=f"{label} ready for {len(exported_drivers)}/{len(drivers)} drivers",
+            )
+            await self.save(job)
+
+        telemetry_drivers = [
+            driver
+            for driver, channels in completed_channels.items()
+            if channels == {"car", "position"}
+        ]
+        if not telemetry_drivers:
+            raise ExternalDataError("Telemetry provider produced no usable driver data")
+        return stored_files, telemetry_drivers
+
+    async def _prepare_telemetry(
+        self,
+        job: dict,
+        bundle,
+        context,
+    ) -> tuple[list[dict], list[str], FastF1TelemetryProvider | None, object | None]:
+        requested_drivers = [
+            driver.name_acronym for driver in context.drivers if driver.name_acronym
+        ]
+        fast: FastF1TelemetryProvider | None = None
+        loaded = None
+        try:
+            fast = FastF1TelemetryProvider()
+            loaded = await fast.load_session(
+                context.session.year,
+                bundle.meeting.get("meeting_name") or context.session.country_name,
+                context.session.session_name,
+                telemetry=False,
+            )
+            drivers, unavailable_drivers = drivers_with_fastf1_laps(
+                loaded, requested_drivers
+            )
+            if not drivers:
+                raise ExternalDataError(
+                    "FastF1 returned no laps for any session driver"
+                )
+            telemetry_files, telemetry_drivers = await self._export_telemetry_channels(
+                job, fast, loaded, drivers, unavailable_drivers
+            )
+            job["telemetry_provider"] = "FastF1"
+        except ExternalDataError as exc:
+            logger.warning(
+                "FastF1 unavailable for session %s; using OpenF1 telemetry: %s",
+                job["session_key"],
+                exc,
+            )
+            job.update(
+                telemetry_provider="OpenF1",
+                progress=40,
+                message="FastF1 unavailable; switching to OpenF1 telemetry",
+            )
+            await self.save(job)
+            drivers, unavailable_drivers = drivers_with_openf1_laps(
+                bundle, requested_drivers
+            )
+            if not drivers:
+                raise ExternalDataError(
+                    "OpenF1 returned no laps for any session driver"
+                ) from exc
+            async with OpenF1Provider() as openf1_telemetry:
+                telemetry_files, telemetry_drivers = (
+                    await self._export_telemetry_channels(
+                        job,
+                        openf1_telemetry,
+                        bundle,
+                        drivers,
+                        unavailable_drivers,
+                    )
+                )
+        return telemetry_files, telemetry_drivers, fast, loaded
+
     async def run(self, job: dict):
         fast = None
         loaded = None
@@ -93,93 +316,21 @@ class PreparationService:
                 job.update(events_ready=True, progress=40, message="Timing ready")
                 await self.save(job)
                 if job["telemetry_requested"]:
-                    fast = FastF1TelemetryProvider()
-                    loaded = await fast.load_session(
-                        context.session.year,
-                        bundle.meeting.get("meeting_name") or context.session.country_name,
-                        context.session.session_name,
-                        telemetry=False,
+                    enrichment = openf1_enrichment(
+                        bundle, context.session.session_name
                     )
-                    # Preserve provider qualifying segments and official stage results.
-                    enrichment = {"qualifying": [], "lap_stages": {}}
-                    if (
-                        "qualifying" in context.session.session_name.lower()
-                        or "shootout" in context.session.session_name.lower()
-                    ):
-                        for _, row in loaded.results.iterrows():
-                            enrichment["qualifying"].append(
-                                {
-                                    "driver_number": int(row["DriverNumber"]),
-                                    **{
-                                        stage: None
-                                        if pd.isna(row.get(stage))
-                                        else row[stage].total_seconds()
-                                        for stage in ("Q1", "Q2", "Q3")
-                                    },
-                                    "position": None
-                                    if pd.isna(row.get("Position"))
-                                    else int(row["Position"]),
-                                }
-                            )
-                        for index, laps in enumerate(loaded.laps.split_qualifying_sessions(), 1):
-                            if laps is not None:
-                                for _, row in laps.iterrows():
-                                    enrichment["lap_stages"][
-                                        f"{int(row['DriverNumber'])}:{int(row['LapNumber'])}"
-                                    ] = f"Q{index}"
                     await records.put("session_enrichment", str(key), enrichment)
-                    requested_drivers = [
-                        driver.name_acronym for driver in context.drivers if driver.name_acronym
-                    ]
-                    drivers, unavailable_drivers = drivers_with_fastf1_laps(
-                        loaded, requested_drivers
+                    telemetry_files, telemetry_drivers, fast, loaded = (
+                        await self._prepare_telemetry(job, bundle, context)
                     )
-                    job["telemetry_unavailable_drivers"] = unavailable_drivers
-                    if unavailable_drivers:
-                        logger.info(
-                            "Skipping drivers without recorded FastF1 laps for session %s: %s",
-                            key,
-                            ", ".join(unavailable_drivers),
+                    if job.get("telemetry_provider") == "FastF1" and loaded is not None:
+                        await records.put(
+                            "session_enrichment",
+                            str(key),
+                            fastf1_enrichment(loaded, context.session.session_name),
                         )
-                    if not drivers:
-                        raise ValueError("FastF1 returned no laps for any session driver")
-                    completed_channels = {driver: set() for driver in drivers}
-                    channel_ranges = {
-                        "car": (40, 27, "Car telemetry"),
-                        "position": (67, 28, "Position telemetry"),
-                    }
-                    for channel, (base, span, label) in channel_ranges.items():
-                        job.update(progress=base, message=f"Decoding {label.lower()}")
-                        await self.save(job)
-                        exports, objects = await fast.export_channel_streaming(
-                            key, loaded, drivers, channel
-                        )
-                        stored_files.extend(objects)
-                        exported_drivers = {exported.driver for exported in exports}
-                        for driver in exported_drivers:
-                            completed_channels[driver].add(channel)
-                        unavailable_drivers.extend(
-                            driver for driver in drivers if driver not in exported_drivers
-                        )
-                        job["telemetry_unavailable_drivers"] = sorted(
-                            set(unavailable_drivers)
-                        )
-                        job.update(
-                            progress=base + span,
-                            message=f"{label} ready for {len(exported_drivers)}/{len(drivers)} drivers",
-                        )
-                        await self.save(job)
-
-                    telemetry_drivers = [
-                        driver
-                        for driver, channels in completed_channels.items()
-                        if channels == {"car", "position"}
-                    ]
+                    stored_files.extend(telemetry_files)
                     succeeded = len(telemetry_drivers)
-                    if succeeded == 0:
-                        raise ValueError(
-                            "FastF1 produced no usable telemetry for any session driver"
-                        )
                     clear_telemetry_cache()
                     job["telemetry_ready"] = not job["errors"]
                     job["telemetry_drivers_ready"] = succeeded
@@ -188,6 +339,7 @@ class PreparationService:
                         "session_key": key,
                         "created_at": datetime.now(UTC).isoformat(),
                         "complete": job["telemetry_ready"],
+                        "telemetry_provider": job.get("telemetry_provider", "FastF1"),
                         "drivers": telemetry_drivers,
                         "files": stored_files,
                         "total_bytes": sum(item["bytes"] for item in stored_files),

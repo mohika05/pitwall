@@ -16,13 +16,13 @@ flowchart LR
 | --- | --- | --- |
 | Replay | Continuous clock, deterministic seeks, stale-response guards and immediate command-state synchronization | Unit regressions and deployed Singapore replay verification |
 | Independent playback | Tab identities, separate channels, durable cursor recovery and shared immutable race datasets | PostgreSQL/Redis integration checks and two-viewer memory verification |
-| Preparation | On-demand jobs, progress, retries, partial results, interrupted-job recovery | Job lifecycle tests; downloading new sessions depends on provider availability |
+| Preparation | On-demand jobs, progress, retries, partial results, interrupted-job recovery and automatic FastF1-to-OpenF1 telemetry fallback | Job lifecycle and provider-schema tests; source completeness still depends on published historical records |
 | F1 interface | Replay-first navigation, responsive timing tower, compact status, telemetry instruments, contextual glossary and three workspaces | Fourteen desktop/mobile browser checks |
 | Analysis | Lap/telemetry comparison, stints, event timeline, bookmarks and classification | Deployed Singapore analysis and telemetry checks |
 | Session views | Practice pace summaries, recorded qualifying stages, Race/Sprint strategy gating | Qualifying enrichment needs a prepared qualifying session; no guessed elimination cutoffs |
 | Strategy | Historical/forecast branches, pit/tyre/traffic assumptions, saved comparisons, sensitivity reruns and recorded-stop backtesting | Determinism and future-data-isolation tests; approximate lap-level model |
 | ML | Training, session-separated holdout, versioned results, five-percent eligibility margin and deterministic fallback | Eight 2024 races trained with Singapore 2025 held out: 0.770s MAE versus 0.823s baseline; accepted with temporal season separation |
-| Operations | Dockerfiles, full Compose stack, CI, health endpoints, request metrics, local/S3 canonical storage, verified manifests, cache cleanup, resumable catalogue preparation, chunked FastF1 telemetry export, event-aware post-session ingestion and same-origin Render deployment | Public deployment verified against Neon/R2; full-race ingestion measured at 243 MB peak against the free 512 MB worker |
+| Operations | Dockerfiles, full Compose stack, CI, health endpoints, request metrics, local/S3 canonical storage, verified manifests, cache cleanup, resumable catalogue preparation, bounded FastF1/OpenF1 telemetry export, event-aware post-session ingestion and same-origin Render deployment | Public deployment verified against Neon/R2; FastF1 full-race ingestion measured at 243 MB peak against the free 512 MB worker |
 
 Use a single backend worker. There are no viewer accounts in this local-first
 application; an administrator token protects preparation endpoints. Viewer IDs

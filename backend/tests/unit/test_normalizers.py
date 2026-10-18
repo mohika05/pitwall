@@ -12,6 +12,7 @@ from app.ingestion.normalizers.laps import (
 from app.ingestion.normalizers.stints import normalize_stints
 from app.ingestion.providers import fastf1 as fastf1_provider
 from app.ingestion.providers.fastf1 import FastF1TelemetryProvider
+from app.ingestion.providers.openf1 import OpenF1Provider
 
 
 def test_2023_sprint_qualifying_uses_fastf1_historical_name() -> None:
@@ -129,6 +130,95 @@ def test_fastf1_streaming_writer_flushes_driver_parquet(monkeypatch, tmp_path) -
     frame = pd.read_parquet(exports[0].path)
     assert frame[["LapNumber", "Speed", "Brake"]].to_dict("records") == [
         {"LapNumber": 1, "Speed": 300, "Brake": False}
+    ]
+
+
+def test_openf1_fallback_writes_fastf1_compatible_telemetry(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        OpenF1Provider,
+        "_telemetry_path",
+        staticmethod(lambda _key, driver, channel: tmp_path / f"{driver}_{channel}.parquet"),
+    )
+    boundaries = OpenF1Provider._lap_boundaries(
+        [
+            {
+                "driver_number": 1,
+                "lap_number": 1,
+                "date_start": "2026-10-11T12:00:10+00:00",
+            },
+            {
+                "driver_number": 1,
+                "lap_number": 2,
+                "date_start": "2026-10-11T12:01:40+00:00",
+            },
+        ]
+    )
+    exported = OpenF1Provider._write_telemetry_channel(
+        11388,
+        "VER",
+        1,
+        "car",
+        [
+            {
+                "date": "2026-10-11T12:00:20+00:00",
+                "rpm": 12000,
+                "speed": 301,
+                "n_gear": 8,
+                "throttle": 100,
+                "brake": 0,
+                "drs": 12,
+            },
+            {
+                "date": "2026-10-11T12:01:50+00:00",
+                "rpm": 11000,
+                "speed": 280,
+                "n_gear": 7,
+                "throttle": 75,
+                "brake": 1,
+                "drs": 0,
+            },
+        ],
+        datetime(2026, 10, 11, 12, tzinfo=UTC),
+        boundaries,
+    )
+
+    assert exported is not None
+    frame = pd.read_parquet(exported.path)
+    assert frame[["LapNumber", "Speed", "Brake", "Source"]].to_dict("records") == [
+        {"LapNumber": 1, "Speed": 301, "Brake": False, "Source": "car"},
+        {"LapNumber": 2, "Speed": 280, "Brake": True, "Source": "car"},
+    ]
+
+
+def test_openf1_fallback_writes_track_positions(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        OpenF1Provider,
+        "_telemetry_path",
+        staticmethod(lambda _key, driver, channel: tmp_path / f"{driver}_{channel}.parquet"),
+    )
+    boundaries = OpenF1Provider._lap_boundaries(
+        [
+            {
+                "driver_number": 1,
+                "lap_number": 1,
+                "date_start": "2026-10-11T12:00:10+00:00",
+            }
+        ]
+    )
+    exported = OpenF1Provider._write_telemetry_channel(
+        11388,
+        "VER",
+        1,
+        "position",
+        [{"date": "2026-10-11T12:00:20+00:00", "x": 12, "y": -34, "z": 5}],
+        datetime(2026, 10, 11, 12, tzinfo=UTC),
+        boundaries,
+    )
+
+    assert exported is not None
+    frame = pd.read_parquet(exported.path)
+    assert frame[["X", "Y", "Z", "Status", "LapNumber"]].to_dict("records") == [
+        {"X": 12, "Y": -34, "Z": 5, "Status": "OnTrack", "LapNumber": 1}
     ]
 
 

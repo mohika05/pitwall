@@ -5,15 +5,16 @@ Pitwall uses three storage layers during historical ingestion:
 - Cloudflare R2 Standard stores compressed replay events, Parquet telemetry and
   completed-session manifests.
 - PostgreSQL stores searchable session, driver, lap, stint and pit-stop metadata.
-- The Render worker decodes FastF1 telemetry in bounded per-driver Parquet chunks,
-  one channel at a time. The source cache and bounded object cache are disposable.
+- The Render worker prepares telemetry one driver and channel at a time. It prefers
+  FastF1 and falls back to OpenF1 historical car/location feeds; local source and object
+  caches are disposable.
 
 Redis can remain local during ingestion. A hosted Redis service is only required when
 the application is deployed.
 
 ```mermaid
 flowchart LR
-    SRC[OpenF1 + FastF1] --> RUN[Ephemeral ingestion runner]
+    SRC[OpenF1 with optional FastF1] --> RUN[Ephemeral ingestion runner]
     RUN --> DB[(Neon PostgreSQL<br/>searchable metadata)]
     RUN --> R2[(Cloudflare R2<br/>events and telemetry)]
     RUN --> TMP[(Local decoded/cache files)]
@@ -29,6 +30,7 @@ flowchart LR
 | Per-driver telemetry Parquet | R2 | Yes, after verified upload |
 | Session completion manifest | R2 | Local materialization only |
 | FastF1 decoded/request cache | None | Yes; always disposable |
+| OpenF1 response data | None | Yes; converted to Parquet per driver |
 
 ## 1. Create the R2 bucket
 
@@ -191,18 +193,18 @@ source data.
 Both jobs run on Ubuntu, but GitHub performs only detection and orchestration. The
 workflow calls the deployed Render preparation API and polls each job to a terminal
 state. Render performs the provider downloads and writes canonical data to Neon and
-R2. This keeps FastF1 archive traffic away from GitHub-hosted runner addresses, which
-the Formula 1 archive rejects.
+R2. FastF1 is attempted first; an archive failure switches the session to OpenF1
+historical `car_data` and `location` feeds without changing the stored object schema.
 
 The remote orchestrator inspects the previous 30 days through the public catalogue and
 requests only sessions that are not telemetry-ready. Render owns its preparation queue,
-Redis connection, database connection, R2 credentials, temporary FastF1 files and
+Redis connection, database connection, R2 credentials, temporary provider files and
 cleanup. Continuous polling keeps the free web service active while a session runs.
-FastF1's standard loader retains every driver's complete car and position frames at
-once, which exceeds the free service's memory on a full race. Pitwall instead parses
-each raw channel incrementally, assigns samples to laps and flushes 1,000-row Parquet
-batches. A Bahrain Race measurement reduced peak resident memory from about 733 MB to
-243 MB while preserving all 55 laps in the comparison driver.
+FastF1 streams are decoded in bounded batches. The OpenF1 fallback requests and writes
+one driver's channel before continuing to the next, preventing a full-field response
+from being retained in memory. A Bahrain Race FastF1 measurement reduced peak resident
+memory from about 733 MB to 243 MB while preserving all 55 laps in the comparison
+driver.
 
 Configure this GitHub Actions **repository secret** before enabling the schedule:
 

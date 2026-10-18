@@ -1,27 +1,64 @@
 import asyncio
 import logging
 import time
+from bisect import bisect_right
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, Self
 
 import httpx
+import pandas as pd
 
 from app.core.config import settings
 from app.core.exceptions import ExternalDataError, ResourceNotFoundError
 from app.ingestion.providers.base import RaceDataProvider, SessionDataBundle
 from app.services.provider_rate import request_slot
-
+from app.storage.object_store import object_store, telemetry_key
 
 logger = logging.getLogger(__name__)
+
+
+CAR_COLUMNS = [
+    "Date",
+    "SessionTime",
+    "Time",
+    "RPM",
+    "Speed",
+    "nGear",
+    "Throttle",
+    "Brake",
+    "DRS",
+    "Source",
+    "LapNumber",
+]
+
+POSITION_COLUMNS = [
+    "Date",
+    "SessionTime",
+    "Time",
+    "X",
+    "Y",
+    "Z",
+    "Status",
+    "Source",
+    "LapNumber",
+]
+
+
+@dataclass
+class OpenF1TelemetryChannelExport:
+    driver: str
+    channel: str
+    rows: int
+    path: Path
 
 
 def _parse_datetime(value: str) -> datetime:
     """
     Convert an ISO-8601 OpenF1 timestamp into a Python datetime.
     """
-    return datetime.fromisoformat(
-        value.replace("Z", "+00:00")
-    )
+    return datetime.fromisoformat(value)
 
 
 def _derive_starting_grid_from_positions(
@@ -96,7 +133,7 @@ class OpenF1Provider(RaceDataProvider):
 
     async def __aenter__(
         self,
-    ) -> "OpenF1Provider":
+    ) -> Self:
         return self
 
     async def __aexit__(
@@ -440,10 +477,8 @@ class OpenF1Provider(RaceDataProvider):
 
         if not rows:
             raise ResourceNotFoundError(
-                (
-                    "No Race session found "
-                    f"for {country_name} {year}"
-                )
+                "No Race session found "
+                f"for {country_name} {year}"
             )
 
         rows.sort(
@@ -485,6 +520,180 @@ class OpenF1Provider(RaceDataProvider):
         )
 
     # ---------------------------------------------------------
+    # HISTORICAL TELEMETRY FALLBACK
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def _lap_boundaries(
+        laps: list[dict[str, Any]],
+    ) -> dict[int, tuple[list[datetime], list[int]]]:
+        """Build per-driver lap starts for assigning high-frequency samples."""
+        grouped: dict[int, list[tuple[datetime, int]]] = {}
+        for lap in laps:
+            number = lap.get("driver_number")
+            lap_number = lap.get("lap_number")
+            started = lap.get("date_start")
+            if number is None or lap_number is None or not started:
+                continue
+            try:
+                row = (_parse_datetime(str(started)), int(lap_number))
+            except (TypeError, ValueError):
+                continue
+            grouped.setdefault(int(number), []).append(row)
+
+        boundaries: dict[int, tuple[list[datetime], list[int]]] = {}
+        for number, rows in grouped.items():
+            rows.sort(key=lambda row: row[0])
+            boundaries[number] = (
+                [row[0] for row in rows],
+                [row[1] for row in rows],
+            )
+        return boundaries
+
+    @staticmethod
+    def _lap_number_at(
+        boundaries: tuple[list[datetime], list[int]] | None,
+        timestamp: datetime,
+    ) -> int | None:
+        if not boundaries:
+            return None
+        starts, lap_numbers = boundaries
+        index = bisect_right(starts, timestamp) - 1
+        return lap_numbers[index] if index >= 0 else None
+
+    @staticmethod
+    def _telemetry_path(session_key: int, driver: str, channel: str) -> Path:
+        directory = object_store.local_path(f"telemetry/{session_key}")
+        directory.mkdir(parents=True, exist_ok=True)
+        safe_driver = driver.upper().replace("/", "_")
+        return directory / f"{safe_driver}_{channel}.parquet"
+
+    @classmethod
+    def _write_telemetry_channel(
+        cls,
+        session_key: int,
+        driver: str,
+        driver_number: int,
+        channel: str,
+        rows: list[dict[str, Any]],
+        session_start: datetime,
+        boundaries: dict[int, tuple[list[datetime], list[int]]],
+    ) -> OpenF1TelemetryChannelExport | None:
+        records: list[dict[str, Any]] = []
+        for sample in rows:
+            raw_date = sample.get("date")
+            if not raw_date:
+                continue
+            try:
+                date = _parse_datetime(str(raw_date))
+            except ValueError:
+                continue
+            lap_number = cls._lap_number_at(boundaries.get(driver_number), date)
+            if lap_number is None:
+                continue
+            elapsed = date - session_start
+            try:
+                if channel == "car":
+                    records.append(
+                        {
+                            "Date": date,
+                            "SessionTime": elapsed,
+                            "Time": elapsed,
+                            "RPM": int(sample.get("rpm") or 0),
+                            "Speed": int(sample.get("speed") or 0),
+                            "nGear": int(sample.get("n_gear") or 0),
+                            "Throttle": int(sample.get("throttle") or 0),
+                            "Brake": bool(int(sample.get("brake") or 0)),
+                            "DRS": int(sample.get("drs") or 0),
+                            "Source": "car",
+                            "LapNumber": lap_number,
+                        }
+                    )
+                else:
+                    records.append(
+                        {
+                            "Date": date,
+                            "SessionTime": elapsed,
+                            "Time": elapsed,
+                            "X": int(sample["x"]),
+                            "Y": int(sample["y"]),
+                            "Z": int(sample.get("z") or 0),
+                            "Status": "OnTrack",
+                            "Source": "pos",
+                            "LapNumber": lap_number,
+                        }
+                    )
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        if not records:
+            return None
+        columns = CAR_COLUMNS if channel == "car" else POSITION_COLUMNS
+        frame = pd.DataFrame.from_records(records, columns=columns)
+        frame = (
+            frame.sort_values("Date")
+            .drop_duplicates(subset=["Date"], keep="first")
+            .reset_index(drop=True)
+        )
+        path = cls._telemetry_path(session_key, driver, channel)
+        frame.to_parquet(path, index=False, compression="snappy")
+        return OpenF1TelemetryChannelExport(
+            driver=driver,
+            channel=channel,
+            rows=len(frame),
+            path=path,
+        )
+
+    async def export_channel_streaming(
+        self,
+        session_key: int,
+        bundle: SessionDataBundle,
+        drivers: list[str],
+        channel: str,
+    ) -> tuple[list[OpenF1TelemetryChannelExport], list[dict[str, Any]]]:
+        """Export one OpenF1 channel a driver at a time to bound memory use."""
+        endpoint = "car_data" if channel == "car" else "location"
+        number_by_driver = {
+            str(row.get("name_acronym") or "").upper(): int(row["driver_number"])
+            for row in bundle.drivers
+            if row.get("name_acronym") and row.get("driver_number") is not None
+        }
+        boundaries = self._lap_boundaries(bundle.laps)
+        session_start = _parse_datetime(str(bundle.session["date_start"]))
+        exports: list[OpenF1TelemetryChannelExport] = []
+        objects: list[dict[str, Any]] = []
+
+        for driver in drivers:
+            driver_number = number_by_driver.get(driver.upper())
+            if driver_number is None or driver_number not in boundaries:
+                continue
+            rows = await self._get(
+                endpoint,
+                {"session_key": session_key, "driver_number": driver_number},
+            )
+            exported = await asyncio.to_thread(
+                self._write_telemetry_channel,
+                session_key,
+                driver,
+                driver_number,
+                channel,
+                rows,
+                session_start,
+                boundaries,
+            )
+            del rows
+            if exported is None:
+                continue
+            exports.append(exported)
+            objects.append(
+                await object_store.publish(
+                    exported.path,
+                    telemetry_key(session_key, driver, channel),
+                )
+            )
+        return exports, objects
+
+    # ---------------------------------------------------------
     # FULL SESSION BUNDLE
     # ---------------------------------------------------------
 
@@ -524,10 +733,8 @@ class OpenF1Provider(RaceDataProvider):
 
         if not meeting_rows:
             raise ResourceNotFoundError(
-                (
-                    f"Meeting {meeting_key} "
-                    "was not found"
-                )
+                f"Meeting {meeting_key} "
+                "was not found"
             )
 
         # -----------------------------------------------------

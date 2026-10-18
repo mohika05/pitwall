@@ -37,8 +37,11 @@ flowchart TD
     T --> P[(PostgreSQL metadata)]
     T --> E[Build ordered event export]
     E --> O[(Object storage)]
-    T --> D[Decode per-driver FastF1 telemetry]
+    T --> F{FastF1 archive available?}
+    F -- yes --> D[Decode bounded FastF1 streams]
+    F -- no --> D2[Download OpenF1 per-driver channels]
     D --> Q[Write Parquet objects]
+    D2 --> Q
     Q --> O
     O --> V{Sizes and checksums verified?}
     V -- yes --> M[Publish complete manifest last]
@@ -51,7 +54,8 @@ Preparation uses a bounded worker semaphore and durable job states. Startup mark
 abandoned jobs as interrupted instead of silently restarting downloads. A session is
 ready only after its manifest is published. S3-compatible objects are materialized
 through a size-bounded local cache; successful and failed attempts both clean the
-decoded FastF1 session cache.
+decoded FastF1 session cache. OpenF1 fallback responses are released after each driver
+channel is converted to the same Parquet contract.
 
 ## Replay ownership and state
 

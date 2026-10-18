@@ -94,6 +94,8 @@ explains that those races are outside the calibrated scope.
   S3-compatible object storage.
 - Publish a verified manifest only after every canonical object is written.
 - Delete disposable FastF1 cache data after each preparation attempt.
+- Fall back to OpenF1 car and location telemetry when the FastF1 archive is
+  unavailable, while publishing the same Parquet and manifest contract.
 - Resume a season-level ingestion run while skipping completed manifests.
 - Detect newly completed sessions from their published OpenF1 end times and run
   cloud ingestion only inside the post-session availability window.
@@ -106,8 +108,8 @@ replay, analysis and strategy features but cannot start ingestion jobs.
 
 ```mermaid
 flowchart LR
-    OF1[OpenF1 timing] --> ING[Ingestion and normalization]
-    FF1[FastF1 telemetry] --> ING
+    OF1[OpenF1 timing and telemetry fallback] --> ING[Ingestion and normalization]
+    FF1[FastF1 preferred telemetry] --> ING
     ING --> PG[(PostgreSQL<br/>metadata)]
     ING --> OBJ[(Local or S3 storage<br/>events, Parquet, manifests)]
     PG --> API[FastAPI application]
@@ -291,13 +293,14 @@ incomplete weekend sessions after the providers have had more time to publish
 telemetry. Complete manifests are skipped, so successful sessions are not downloaded
 again. Manual dispatch remains available for delayed sessions and recovery.
 GitHub acts only as the scheduler and monitor. It calls the protected preparation API
-on the deployed Render service, where OpenF1/FastF1 processing and writes to Neon and
-R2 occur. This keeps provider downloads away from GitHub-hosted runner addresses,
-which the Formula 1 archive rejects. The workflow requires a repository secret named
+on the deployed Render service, where provider processing and writes to Neon and R2
+occur. FastF1 is attempted first for telemetry; OpenF1 historical `car_data` and
+`location` feeds automatically take over if that archive is unavailable. The workflow
+requires a repository secret named
 `PITWALL_ADMIN_TOKEN` that exactly matches the value configured on Render. The optional
 repository variable `PITWALL_API_URL` overrides the public deployment URL. Render
-decodes car and position streams separately and flushes bounded Parquet batches so a
-full race fits within the free instance's 512 MB memory limit.
+downloads one driver and channel at a time and writes bounded Parquet files so a full
+race fits within the free instance's 512 MB memory limit.
 
 ## Testing
 

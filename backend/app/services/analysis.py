@@ -8,9 +8,16 @@ from app.persistence.repositories.session_repository import SessionRepository
 from app.persistence.repositories.workspace_repository import workspace_repository
 from app.replay.controller import replay_registry
 from app.services.telemetry import telemetry_service
+from app.storage.object_store import manifest_key, object_store
 
 
-def analyse(context, events, enrichment=None, telemetry_drivers=None):
+def analyse(
+    context,
+    events,
+    enrichment=None,
+    telemetry_drivers=None,
+    telemetry_provider="FastF1",
+):
     enrichment = enrichment or {}
     state = build_initial_state(context)
     laps, stints, timeline = [], [], []
@@ -89,10 +96,10 @@ def analyse(context, events, enrichment=None, telemetry_drivers=None):
         if events
         else context.session.date_start.isoformat(),
         "quality": {
-            "source": "OpenF1 timing / FastF1 telemetry",
+            "source": f"OpenF1 timing / {telemetry_provider} telemetry",
             "telemetry_drivers": ready,
             "total_drivers": len(context.drivers),
-            "note": "Recorded samples; missing and invalid laps are excluded from pace summaries. Qualifying stages require FastF1 preparation.",
+            "note": "Recorded samples; missing and invalid laps are excluded from pace summaries. Qualifying stages use published provider records.",
         },
     }
 
@@ -109,6 +116,16 @@ async def session_analysis(session_key: int):
     context, events, official = await load_history(session_key)
     enrichment = await workspace_repository.get("session_enrichment", str(session_key))
     telemetry_drivers = await telemetry_service.available_drivers(session_key)
-    result = analyse(context, events, enrichment, telemetry_drivers)
+    try:
+        manifest = await object_store.read_json(manifest_key(session_key))
+    except (FileNotFoundError, ValueError):
+        manifest = {}
+    result = analyse(
+        context,
+        events,
+        enrichment,
+        telemetry_drivers,
+        manifest.get("telemetry_provider", "FastF1"),
+    )
     result["official_result"] = official
     return result

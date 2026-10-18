@@ -49,10 +49,11 @@ The post-session workflow checks OpenF1 end times hourly on race-weekend days, r
 sessions about 2, 5 and 10 hours after completion, and performs daily catch-ups at
 midnight Singapore time from Monday through Thursday for incomplete weekend telemetry.
 GitHub calls the protected preparation endpoint and polls it, while the Render service
-performs OpenF1/FastF1 downloads and publishes metadata and objects to Neon and R2.
-This avoids the Formula 1 archive restrictions encountered by GitHub-hosted runners.
-The preparation worker writes telemetry in 1,000-row Parquet batches and processes car
-and position streams separately to remain below the free service's 512 MB memory cap.
+performs provider downloads and publishes metadata and objects to Neon and R2. The
+worker prefers FastF1 telemetry and automatically falls back to OpenF1 historical car
+and location channels when that archive is unavailable. FastF1 is decoded in bounded
+batches; OpenF1 is downloaded one driver and channel at a time to remain below the free
+service's 512 MB memory cap.
 Run `cloud_preflight` periodically to verify object integrity and keep stored objects
 below the 9.5 GB safety target.
 

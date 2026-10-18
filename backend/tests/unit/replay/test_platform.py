@@ -258,6 +258,136 @@ def test_preparation_skips_drivers_without_recorded_fastf1_laps():
     assert unavailable == ["SAI"]
 
 
+def test_preparation_selects_openf1_drivers_with_timed_laps():
+    from types import SimpleNamespace
+
+    from app.services.preparation import drivers_with_openf1_laps
+
+    bundle = SimpleNamespace(
+        drivers=[
+            {"driver_number": 1, "name_acronym": "VER"},
+            {"driver_number": 4, "name_acronym": "NOR"},
+            {"driver_number": 55, "name_acronym": "SAI"},
+        ],
+        laps=[
+            {"driver_number": 1, "date_start": "2026-10-11T12:00:00+00:00"},
+            {"driver_number": 4, "date_start": "2026-10-11T12:00:01+00:00"},
+        ],
+    )
+
+    available, unavailable = drivers_with_openf1_laps(
+        bundle, ["VER", "SAI", "NOR"]
+    )
+
+    assert available == ["VER", "NOR"]
+    assert unavailable == ["SAI"]
+
+
+def test_openf1_qualifying_results_preserve_stage_times():
+    from types import SimpleNamespace
+
+    from app.services.preparation import openf1_enrichment
+
+    bundle = SimpleNamespace(
+        session_result=[
+            {
+                "driver_number": 1,
+                "duration": [91.2, 90.8, 90.5],
+                "position": 1,
+            }
+        ],
+        race_control=[
+            {"date": "2026-10-10T13:00:00+00:00", "qualifying_phase": 1},
+            {"date": "2026-10-10T13:25:00+00:00", "qualifying_phase": 2},
+        ],
+        laps=[
+            {
+                "driver_number": 1,
+                "lap_number": 2,
+                "date_start": "2026-10-10T13:05:00+00:00",
+            },
+            {
+                "driver_number": 1,
+                "lap_number": 7,
+                "date_start": "2026-10-10T13:30:00+00:00",
+            },
+        ],
+    )
+
+    enrichment = openf1_enrichment(bundle, "Qualifying")
+
+    assert enrichment["qualifying"] == [
+        {
+            "driver_number": 1,
+            "Q1": 91.2,
+            "Q2": 90.8,
+            "Q3": 90.5,
+            "position": 1,
+        }
+    ]
+    assert enrichment["lap_stages"] == {"1:2": "Q1", "1:7": "Q2"}
+
+
+async def test_preparation_falls_back_to_openf1_telemetry(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.core.exceptions import ExternalDataError
+    from app.services import preparation
+
+    class FastStub:
+        async def load_session(self, *_args, **_kwargs):
+            raise ExternalDataError("archive authentication required")
+
+    class OpenStub:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    fast = FastStub()
+    openf1 = OpenStub()
+    monkeypatch.setattr(preparation, "FastF1TelemetryProvider", lambda: fast)
+    monkeypatch.setattr(preparation, "OpenF1Provider", lambda: openf1)
+    service = preparation.PreparationService()
+    service.save = AsyncMock()
+    service._export_telemetry_channels = AsyncMock(
+        return_value=([{"key": "telemetry/11388/VER_car.parquet", "bytes": 10}], ["VER"])
+    )
+    bundle = SimpleNamespace(
+        meeting={"meeting_name": "Singapore Grand Prix"},
+        drivers=[{"driver_number": 3, "name_acronym": "VER"}],
+        laps=[
+            {
+                "driver_number": 3,
+                "date_start": "2026-10-11T12:03:39.077000+00:00",
+            }
+        ],
+    )
+    context = SimpleNamespace(
+        session=SimpleNamespace(
+            year=2026,
+            country_name="Singapore",
+            session_name="Race",
+        ),
+        drivers=[SimpleNamespace(name_acronym="VER")],
+    )
+    job = {"session_key": 11388}
+
+    files, drivers, returned_fast, loaded = await service._prepare_telemetry(
+        job, bundle, context
+    )
+
+    assert files[0]["key"].endswith("VER_car.parquet")
+    assert drivers == ["VER"]
+    assert returned_fast is fast
+    assert loaded is None
+    assert job["telemetry_provider"] == "OpenF1"
+    service._export_telemetry_channels.assert_awaited_once_with(
+        job, openf1, bundle, ["VER"], []
+    )
+
+
 async def test_preparation_deduplicates_running_jobs_and_recovers_interruption(monkeypatch):
     import asyncio
 

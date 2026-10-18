@@ -71,8 +71,8 @@ jobs:
   ingest:
     needs: detect
     if: needs.detect.outputs.should_ingest == 'true'
-    # GitHub schedules and monitors the work. Render performs provider downloads so
-    # Formula 1's archive never sees a GitHub-hosted runner address.
+    # GitHub schedules and monitors the work. Render performs provider downloads and
+    # can switch from FastF1 to OpenF1 without moving large telemetry through Actions.
     runs-on: ubuntu-latest
     timeout-minutes: 330
     env:
