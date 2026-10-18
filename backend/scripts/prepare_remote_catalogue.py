@@ -95,7 +95,7 @@ def run(args: argparse.Namespace) -> int:
     catalog = request_json(f"{api_url}/api/catalog/{args.year}")
     now = datetime.now(UTC)
     sessions = [
-        session
+        {**session, "meeting_name": meeting.get("meeting_name", "Unknown meeting")}
         for meeting in catalog["meetings"]
         if "testing" not in str(meeting.get("meeting_name", "")).lower()
         for session in meeting["sessions"]

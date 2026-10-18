@@ -52,8 +52,9 @@ GitHub calls the protected preparation endpoint and polls it, while the Render s
 performs provider downloads and publishes metadata and objects to Neon and R2. The
 worker prefers FastF1 telemetry and automatically falls back to OpenF1 historical car
 and location channels when that archive is unavailable. FastF1 is decoded in bounded
-batches; OpenF1 is downloaded one driver and channel in 15-minute slices to remain below
-the free service's 512 MB memory cap.
+batches; OpenF1 is downloaded one driver and channel in 15-minute slices to reduce peak
+memory. Monitor Render memory during ingestion and concurrent replay traffic; these
+bounds alone do not guarantee staying below the service's memory cap.
 Run `cloud_preflight` periodically to verify object integrity and keep stored objects
 below the 9.5 GB safety target.
 

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 from bisect import bisect_right
@@ -6,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Self
+from urllib.parse import quote
 
 import httpx
 import pandas as pd
@@ -19,6 +21,20 @@ from app.services.provider_rate import request_slot
 from app.storage.object_store import object_store, telemetry_key
 
 logger = logging.getLogger(__name__)
+
+
+def _resource_url(endpoint: str, params: dict[str, Any] | None) -> str:
+    """OpenF1 parses comparison expressions, not ordinary key/value pairs.
+
+    Passing {"date<": value} as HTTPX params adds an equals sign and changes
+    the expression. Encode fields/values separately, preserving the operator.
+    """
+    filters = []
+    for key, value in (params or {}).items():
+        operator = next((op for op in (">=", "<=", ">", "<", "=") if key.endswith(op)), "=")
+        field = key.removesuffix(operator)
+        filters.append(f"{quote(field, safe='')}{operator}{quote(str(value), safe='')}")
+    return endpoint + ("?" + "&".join(filters) if filters else "")
 
 
 CAR_COLUMNS = [
@@ -201,8 +217,7 @@ class OpenF1Provider(RaceDataProvider):
 
             try:
                 response = await self.client.get(
-                    endpoint,
-                    params=params,
+                    _resource_url(endpoint, params),
                 )
 
             except (
@@ -392,7 +407,7 @@ class OpenF1Provider(RaceDataProvider):
                 "OpenF1 request failed after "
                 f"{settings.openf1_max_retries} "
                 f"attempts for endpoint "
-                f"{endpoint}"
+                f"{endpoint}: {type(last_error).__name__}: {last_error}"
             ),
             status_code=(
                 last_error.status_code
@@ -688,15 +703,32 @@ class OpenF1Provider(RaceDataProvider):
         try:
             while cursor < session_end:
                 chunk_end = min(cursor + chunk, session_end)
-                rows = await self._get(
-                    endpoint,
-                    {
-                        "session_key": session_key,
-                        "driver_number": driver_number,
-                        "date>=": cursor.isoformat(),
-                        "date<": chunk_end.isoformat(),
-                    },
-                )
+                try:
+                    rows = await self._get(
+                        endpoint,
+                        {
+                            "session_key": session_key,
+                            "driver_number": driver_number,
+                            "date>=": cursor.isoformat(),
+                            "date<": chunk_end.isoformat(),
+                        },
+                    )
+                except ExternalDataError as exc:
+                    # Empty time windows are normal before a driver leaves the
+                    # garage or after retirement. Do not suppress other 404s.
+                    try:
+                        detail = json.loads(exc.response_text or "null")
+                    except ValueError:
+                        detail = None
+                    if exc.status_code == 404 and detail == {"detail": "No results found."}:
+                        cursor = chunk_end
+                        continue
+                    raise ExternalDataError(
+                        f"Session {session_key}, driver {driver}, {endpoint} "
+                        f"[{cursor.isoformat()}, {chunk_end.isoformat()}): {exc}",
+                        status_code=exc.status_code,
+                        response_text=exc.response_text,
+                    ) from exc
                 records = self._telemetry_records(
                     channel,
                     rows,

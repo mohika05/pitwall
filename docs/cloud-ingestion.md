@@ -206,6 +206,15 @@ from being retained in memory. A Bahrain Race FastF1 measurement reduced peak re
 memory from about 733 MB to 243 MB while preserving all 55 laps in the comparison
 driver.
 
+OpenF1 filters must preserve comparison operators in the URL (for example,
+`date>=...&date<...`). Encoding them as ordinary HTTP query parameter names can
+produce provider HTTP 500 errors. The shared client builds these expressions
+explicitly. A telemetry slice returning `404` with `No results found.` is treated
+as empty and the next slice is requested; other errors still fail preparation.
+Exhausted retries report the underlying HTTP status or exception, and telemetry
+failures include the session, driver and time window. A failed download never
+replaces the existing complete driver file with its partial output.
+
 Configure this GitHub Actions **repository secret** before enabling the schedule:
 
 ```text
