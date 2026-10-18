@@ -2,7 +2,6 @@ import gzip
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -134,16 +133,17 @@ async def test_partial_manifest_exposes_verified_drivers(monkeypatch, tmp_path: 
 async def test_event_repository_falls_back_to_compressed_object(monkeypatch, tmp_path: Path):
     from app.persistence.repositories import event_repository as repository_module
 
-    class EmptyResult:
-        def scalars(self):
-            return SimpleNamespace(all=list)
-
     class EmptySession:
         async def execute(self, _statement):
-            return EmptyResult()
+            raise AssertionError("R2-backed events must not be fetched from PostgreSQL")
 
     store = LocalObjectStore(tmp_path)
     monkeypatch.setattr(repository_module, "object_store", store)
+    monkeypatch.setattr(
+        repository_module.settings,
+        "persist_historical_events_in_database",
+        False,
+    )
     path = store.local_path("processed/7_events.json.gz")
     path.parent.mkdir(parents=True)
     payload = [
