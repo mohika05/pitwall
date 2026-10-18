@@ -16,9 +16,10 @@ provider window closes. Shared request spacing, retry limits and `Retry-After`
 handling reduce provider pressure.
 
 Telemetry preparation first attempts FastF1. Any provider-level archive failure switches
-the complete session to OpenF1, downloads one driver and channel at a time, assigns each
-sample to its published lap start and writes the same Parquet keys consumed by replay and
-analysis. Existing prepared sessions remain provider-independent in object storage.
+the complete session to OpenF1, downloads one driver and channel in 15-minute slices,
+assigns each sample to its published lap start and writes the same Parquet keys consumed
+by replay and analysis. Existing prepared sessions remain provider-independent in object
+storage.
 
 ## Normalization flow
 

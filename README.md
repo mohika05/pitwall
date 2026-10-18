@@ -299,8 +299,8 @@ occur. FastF1 is attempted first for telemetry; OpenF1 historical `car_data` and
 requires a repository secret named
 `PITWALL_ADMIN_TOKEN` that exactly matches the value configured on Render. The optional
 repository variable `PITWALL_API_URL` overrides the public deployment URL. Render
-downloads one driver and channel at a time and writes bounded Parquet files so a full
-race fits within the free instance's 512 MB memory limit.
+downloads one driver and channel in 15-minute slices and writes bounded Parquet files
+so a full race fits within the free instance's 512 MB memory limit.
 
 ## Testing
 

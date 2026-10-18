@@ -64,6 +64,19 @@ def openf1_enrichment(bundle, session_name: str) -> dict:
     if "qualifying" not in name and "shootout" not in name:
         return enrichment
 
+    def numeric_or_none(value):
+        """OpenF1 may use result markers such as RT, DNS, or DNF."""
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def integer_or_none(value):
+        numeric = numeric_or_none(value)
+        return None if numeric is None else int(numeric)
+
     for row in bundle.session_result:
         number = row.get("driver_number")
         if number is None:
@@ -76,14 +89,12 @@ def openf1_enrichment(bundle, session_name: str) -> dict:
                 **{
                     f"Q{index}": (
                         None
-                        if index > len(stages) or stages[index - 1] is None
-                        else float(stages[index - 1])
+                        if index > len(stages)
+                        else numeric_or_none(stages[index - 1])
                     )
                     for index in (1, 2, 3)
                 },
-                "position": (
-                    None if row.get("position") is None else int(row["position"])
-                ),
+                "position": integer_or_none(row.get("position")),
             }
         )
 

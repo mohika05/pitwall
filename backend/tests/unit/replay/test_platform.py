@@ -328,6 +328,36 @@ def test_openf1_qualifying_results_preserve_stage_times():
     assert enrichment["lap_stages"] == {"1:2": "Q1", "1:7": "Q2"}
 
 
+def test_openf1_qualifying_results_ignore_status_markers():
+    from types import SimpleNamespace
+
+    from app.services.preparation import openf1_enrichment
+
+    bundle = SimpleNamespace(
+        session_result=[
+            {
+                "driver_number": 1,
+                "duration": [91.2, "RT", None],
+                "position": "RT",
+            }
+        ],
+        race_control=[],
+        laps=[],
+    )
+
+    enrichment = openf1_enrichment(bundle, "Qualifying")
+
+    assert enrichment["qualifying"] == [
+        {
+            "driver_number": 1,
+            "Q1": 91.2,
+            "Q2": None,
+            "Q3": None,
+            "position": None,
+        }
+    ]
+
+
 async def test_preparation_falls_back_to_openf1_telemetry(monkeypatch):
     from types import SimpleNamespace
 

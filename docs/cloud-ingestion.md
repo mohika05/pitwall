@@ -5,9 +5,9 @@ Pitwall uses three storage layers during historical ingestion:
 - Cloudflare R2 Standard stores compressed replay events, Parquet telemetry and
   completed-session manifests.
 - PostgreSQL stores searchable session, driver, lap, stint and pit-stop metadata.
-- The Render worker prepares telemetry one driver and channel at a time. It prefers
-  FastF1 and falls back to OpenF1 historical car/location feeds; local source and object
-  caches are disposable.
+- The Render worker prepares telemetry one driver and channel in 15-minute slices. It
+  prefers FastF1 and falls back to OpenF1 historical car/location feeds; local source
+  and object caches are disposable.
 
 Redis can remain local during ingestion. A hosted Redis service is only required when
 the application is deployed.
@@ -201,7 +201,7 @@ requests only sessions that are not telemetry-ready. Render owns its preparation
 Redis connection, database connection, R2 credentials, temporary provider files and
 cleanup. Continuous polling keeps the free web service active while a session runs.
 FastF1 streams are decoded in bounded batches. The OpenF1 fallback requests and writes
-one driver's channel before continuing to the next, preventing a full-field response
+one driver's 15-minute channel slice before continuing, preventing a full-race response
 from being retained in memory. A Bahrain Race FastF1 measurement reduced peak resident
 memory from about 733 MB to 243 MB while preserving all 55 laps in the comparison
 driver.

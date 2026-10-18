@@ -9,6 +9,8 @@ from typing import Any, Self
 
 import httpx
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from app.core.config import settings
 from app.core.exceptions import ExternalDataError, ResourceNotFoundError
@@ -579,6 +581,42 @@ class OpenF1Provider(RaceDataProvider):
         session_start: datetime,
         boundaries: dict[int, tuple[list[datetime], list[int]]],
     ) -> OpenF1TelemetryChannelExport | None:
+        records = cls._telemetry_records(
+            channel, rows, driver_number, session_start, boundaries
+        )
+        if not records:
+            return None
+        columns = CAR_COLUMNS if channel == "car" else POSITION_COLUMNS
+        frame = cls._telemetry_frame(records, columns)
+        path = cls._telemetry_path(session_key, driver, channel)
+        frame.to_parquet(path, index=False, compression="snappy")
+        return OpenF1TelemetryChannelExport(
+            driver=driver,
+            channel=channel,
+            rows=len(frame),
+            path=path,
+        )
+
+    @staticmethod
+    def _telemetry_frame(
+        records: list[dict[str, Any]], columns: list[str]
+    ) -> pd.DataFrame:
+        return (
+            pd.DataFrame.from_records(records, columns=columns)
+            .sort_values("Date")
+            .drop_duplicates(subset=["Date"], keep="first")
+            .reset_index(drop=True)
+        )
+
+    @classmethod
+    def _telemetry_records(
+        cls,
+        channel: str,
+        rows: list[dict[str, Any]],
+        driver_number: int,
+        session_start: datetime,
+        boundaries: dict[int, tuple[list[datetime], list[int]]],
+    ) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         for sample in rows:
             raw_date = sample.get("date")
@@ -625,22 +663,73 @@ class OpenF1Provider(RaceDataProvider):
                     )
             except (KeyError, TypeError, ValueError):
                 continue
+        return records
 
-        if not records:
-            return None
+    async def _export_driver_channel_chunked(
+        self,
+        session_key: int,
+        driver: str,
+        driver_number: int,
+        channel: str,
+        session_start: datetime,
+        session_end: datetime,
+        boundaries: dict[int, tuple[list[datetime], list[int]]],
+    ) -> OpenF1TelemetryChannelExport | None:
+        """Write one driver incrementally so a race response never fills RAM."""
+        endpoint = "car_data" if channel == "car" else "location"
         columns = CAR_COLUMNS if channel == "car" else POSITION_COLUMNS
-        frame = pd.DataFrame.from_records(records, columns=columns)
-        frame = (
-            frame.sort_values("Date")
-            .drop_duplicates(subset=["Date"], keep="first")
-            .reset_index(drop=True)
-        )
-        path = cls._telemetry_path(session_key, driver, channel)
-        frame.to_parquet(path, index=False, compression="snappy")
+        path = self._telemetry_path(session_key, driver, channel)
+        partial_path = path.with_suffix(f"{path.suffix}.part")
+        partial_path.unlink(missing_ok=True)
+        writer: pq.ParquetWriter | None = None
+        rows_written = 0
+        cursor = session_start
+        chunk = timedelta(minutes=15)
+        try:
+            while cursor < session_end:
+                chunk_end = min(cursor + chunk, session_end)
+                rows = await self._get(
+                    endpoint,
+                    {
+                        "session_key": session_key,
+                        "driver_number": driver_number,
+                        "date>=": cursor.isoformat(),
+                        "date<": chunk_end.isoformat(),
+                    },
+                )
+                records = self._telemetry_records(
+                    channel,
+                    rows,
+                    driver_number,
+                    session_start,
+                    boundaries,
+                )
+                del rows
+                if records:
+                    frame = self._telemetry_frame(records, columns)
+                    del records
+                    table = pa.Table.from_pandas(frame, preserve_index=False)
+                    del frame
+                    if writer is None:
+                        writer = pq.ParquetWriter(
+                            partial_path, table.schema, compression="snappy"
+                        )
+                    writer.write_table(table)
+                    rows_written += table.num_rows
+                    del table
+                cursor = chunk_end
+        finally:
+            if writer is not None:
+                writer.close()
+
+        if rows_written == 0:
+            partial_path.unlink(missing_ok=True)
+            return None
+        partial_path.replace(path)
         return OpenF1TelemetryChannelExport(
             driver=driver,
             channel=channel,
-            rows=len(frame),
+            rows=rows_written,
             path=path,
         )
 
@@ -652,7 +741,6 @@ class OpenF1Provider(RaceDataProvider):
         channel: str,
     ) -> tuple[list[OpenF1TelemetryChannelExport], list[dict[str, Any]]]:
         """Export one OpenF1 channel a driver at a time to bound memory use."""
-        endpoint = "car_data" if channel == "car" else "location"
         number_by_driver = {
             str(row.get("name_acronym") or "").upper(): int(row["driver_number"])
             for row in bundle.drivers
@@ -660,6 +748,15 @@ class OpenF1Provider(RaceDataProvider):
         }
         boundaries = self._lap_boundaries(bundle.laps)
         session_start = _parse_datetime(str(bundle.session["date_start"]))
+        raw_end = bundle.session.get("date_end")
+        if raw_end:
+            session_end = _parse_datetime(str(raw_end))
+        else:
+            latest_start = max(
+                (dates[-1] for dates, _ in boundaries.values() if dates),
+                default=session_start,
+            )
+            session_end = latest_start + timedelta(minutes=10)
         exports: list[OpenF1TelemetryChannelExport] = []
         objects: list[dict[str, Any]] = []
 
@@ -667,21 +764,15 @@ class OpenF1Provider(RaceDataProvider):
             driver_number = number_by_driver.get(driver.upper())
             if driver_number is None or driver_number not in boundaries:
                 continue
-            rows = await self._get(
-                endpoint,
-                {"session_key": session_key, "driver_number": driver_number},
-            )
-            exported = await asyncio.to_thread(
-                self._write_telemetry_channel,
+            exported = await self._export_driver_channel_chunked(
                 session_key,
                 driver,
                 driver_number,
                 channel,
-                rows,
                 session_start,
+                session_end,
                 boundaries,
             )
-            del rows
             if exported is None:
                 continue
             exports.append(exported)

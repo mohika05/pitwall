@@ -54,7 +54,7 @@ Preparation uses a bounded worker semaphore and durable job states. Startup mark
 abandoned jobs as interrupted instead of silently restarting downloads. A session is
 ready only after its manifest is published. S3-compatible objects are materialized
 through a size-bounded local cache; successful and failed attempts both clean the
-decoded FastF1 session cache. OpenF1 fallback responses are released after each driver
+decoded FastF1 session cache. OpenF1 fallback responses are released after each 15-minute
 channel is converted to the same Parquet contract.
 
 ## Replay ownership and state

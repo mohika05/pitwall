@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pandas as pd
 import pytest
@@ -220,6 +221,58 @@ def test_openf1_fallback_writes_track_positions(monkeypatch, tmp_path) -> None:
     assert frame[["X", "Y", "Z", "Status", "LapNumber"]].to_dict("records") == [
         {"X": 12, "Y": -34, "Z": 5, "Status": "OnTrack", "LapNumber": 1}
     ]
+
+
+async def test_openf1_race_telemetry_is_downloaded_in_bounded_chunks(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        OpenF1Provider,
+        "_telemetry_path",
+        staticmethod(lambda _key, driver, channel: tmp_path / f"{driver}_{channel}.parquet"),
+    )
+    provider = object.__new__(OpenF1Provider)
+
+    async def get_chunk(_endpoint, params):
+        timestamp = datetime.fromisoformat(params["date>="]) + timedelta(seconds=30)
+        return [
+            {
+                "date": timestamp.isoformat(),
+                "rpm": 12000,
+                "speed": 300,
+                "n_gear": 8,
+                "throttle": 100,
+                "brake": 0,
+                "drs": 12,
+            }
+        ]
+
+    provider._get = AsyncMock(side_effect=get_chunk)
+    session_start = datetime(2026, 10, 11, 12, tzinfo=UTC)
+    boundaries = OpenF1Provider._lap_boundaries(
+        [
+            {
+                "driver_number": 1,
+                "lap_number": 1,
+                "date_start": session_start.isoformat(),
+            }
+        ]
+    )
+
+    exported = await provider._export_driver_channel_chunked(
+        11388,
+        "VER",
+        1,
+        "car",
+        session_start,
+        session_start + timedelta(minutes=31),
+        boundaries,
+    )
+
+    assert exported is not None
+    assert provider._get.await_count == 3
+    frame = pd.read_parquet(exported.path)
+    assert len(frame) == 3
 
 
 def test_stint_without_recorded_laps_does_not_block_session():
