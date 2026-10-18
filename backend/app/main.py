@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routers import (
     analysis,
@@ -36,11 +37,26 @@ request_seconds = Counter()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await preparation_service.recover()
+    async def recover_preparations() -> bool:
+        try:
+            await preparation_service.recover()
+        except SQLAlchemyError as exc:
+            # A temporary Neon outage or exhausted quota must not prevent the
+            # web service from starting. Database-backed endpoints will still
+            # report their own failure while the health endpoint and frontend
+            # remain available, and maintenance retries recovery later.
+            logger.warning("Database unavailable during preparation recovery: %s", exc)
+            return False
+        return True
+
+    preparations_recovered = await recover_preparations()
 
     async def maintain():
+        nonlocal preparations_recovered
         while True:
             await asyncio.sleep(60)
+            if not preparations_recovered:
+                preparations_recovered = await recover_preparations()
             await replay_registry.collect_idle()
 
     maintenance = asyncio.create_task(maintain())
