@@ -24,28 +24,8 @@ radio, video, betting advice or a complete FIA regulation simulator.
   <img src="docs/assets/pitwall-banner.svg" alt="Pitwall — race replay, analysis and strategy" width="100%" />
 </p>
 
-## Product tour
-
-<p align="center">
-  <img src="docs/assets/screenshots/replay.png" alt="Pitwall replay workspace showing race order and live driver positions on the circuit" width="100%" />
-</p>
-
-<p align="center"><strong>Replay</strong> — reconstruct a historical race moment with synchronized timing, tyres, gaps and circuit positions.</p>
-
-<table>
-  <tr>
-    <td width="50%"><img src="docs/assets/screenshots/analysis.png" alt="Pitwall analysis workspace comparing driver lap times" /></td>
-    <td width="50%"><img src="docs/assets/screenshots/strategy.png" alt="Pitwall strategy workspace for testing an alternative pit-stop decision" /></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>Analyze</strong> — compare laps, stints and telemetry.</td>
-    <td align="center"><strong>Strategy</strong> — test a different pit-stop call.</td>
-  </tr>
-</table>
-
 ## Contents
 
-- [Product tour](#product-tour)
 - [What you can do](#what-you-can-do)
 - [How it works](#how-it-works)
 - [Strategy and machine learning](#strategy-and-machine-learning)
